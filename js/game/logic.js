@@ -138,6 +138,8 @@ export function createGame({ state, ui, world, save, backend, config, story }) {
     const res = await ui.puzzle({
       index: i, spot: sp, intro: story.spots[i], puzzle: pz, solved,
       fragment: solved ? fragmentText(story, i + 1, state.fragments[i]) : null,
+      lockUntil: state.locks?.[`p${i}`] || 0,
+      onLock: (until) => { state.locks = { ...(state.locks || {}), [`p${i}`]: until }; save(); },
       submit: async (answer) => {
         const r = await backend.check(state.session, i, answer);
         return r;
@@ -169,6 +171,8 @@ export function createGame({ state, ui, world, save, backend, config, story }) {
     const seq = await ui.finalPuzzle({
       length: config.puzzles.length, fragments: frags, story,
       onPress: (d) => world.fx('altarPress', d),
+      lockUntil: state.locks?.final || 0,
+      onLock: (until) => { state.locks = { ...(state.locks || {}), final: until }; save(); },
       submit: async (s) => backend.final(state.session, s),
     });
     if (!seq) return;

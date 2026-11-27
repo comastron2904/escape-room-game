@@ -221,8 +221,32 @@ function bindAnswerInput(root, type, len, onChange, { options = [] } = {}) {
   };
 }
 
+// ---- 오답 대기 (오답마다 점점 길어짐 · 서버도 같은 시간을 지킴) ----
+function startLock(root, until, { err, ok, input, onDone, wrongCount }) {
+  const wrap = root.querySelector('.num-wrap, .dir-wrap, .text-wrap, .choice-wrap, .ox-wrap');
+  wrap?.classList.add('locked');
+  root.querySelectorAll('.text-answer').forEach((x) => { x.disabled = true; });
+  ok.disabled = true;
+  const label = wrongCount ? `틀렸어요 (${wrongCount}번째 오답).` : '아직 기다려야 해요.';
+  const tick = () => {
+    if (!document.body.contains(err)) { clearInterval(t); return; } // 팝업이 닫힘
+    const left = Math.ceil((until - Date.now()) / 1000);
+    if (left <= 0) {
+      clearInterval(t);
+      wrap?.classList.remove('locked');
+      root.querySelectorAll('.text-answer').forEach((x) => { x.disabled = false; });
+      err.innerHTML = '';
+      onDone?.();
+      return;
+    }
+    err.innerHTML = `🔒 ${label} <b class="lock-sec">${left}초</b> 뒤에 다시 입력할 수 있어요.`;
+  };
+  const t = setInterval(tick, 250);
+  tick();
+}
+
 // ---- 교과 문제 퍼즐 ----
-function uiPuzzle({ index, spot, intro, puzzle, solved, fragment, submit }) {
+function uiPuzzle({ index, spot, intro, puzzle, solved, fragment, submit, lockUntil = 0, onLock }) {
   const type = ANSWER_TYPES[puzzle.type] ? puzzle.type : 'number';
   const imgHtml = puzzle.image ? `<img class="q-img" src="${esc(puzzle.image)}" alt="문제 그림" referrerpolicy="no-referrer" title="누르면 크게 보기" />` : '';
   const len = puzzle.len || 4;
@@ -254,6 +278,8 @@ function uiPuzzle({ index, spot, intro, puzzle, solved, fragment, submit }) {
   const err = root.querySelector('[data-err]');
   input = bindAnswerInput(root, type, len, () => { ok.disabled = busy || !input?.ready(); }, { options });
   ok.disabled = !input.ready();
+  const unlock = () => { busy = false; if (type !== 'number') input.clear(); ok.disabled = !input.ready(); };
+  if (lockUntil > Date.now()) { busy = true; startLock(root, lockUntil, { err, ok, input, onDone: unlock }); }
   async function trySubmit() {
     if (busy || !input.ready()) return;
     const v = input.get();
@@ -261,22 +287,20 @@ function uiPuzzle({ index, spot, intro, puzzle, solved, fragment, submit }) {
     let r;
     try { r = await submit(v); } catch (e) { err.textContent = e.message; busy = false; ok.disabled = false; return; }
     if (r?.ok) { closeModal(r); return; }
-    sfx.play('wrong');
-    root.classList.remove('shake'); void root.offsetWidth; root.classList.add('shake');
-    err.textContent = '🔒 틀렸어요. 다시 생각해 보세요. (2초 후 다시 입력)';
-    setTimeout(() => {
-      busy = false;
-      if (type !== 'number') input.clear();
-      ok.disabled = !input.ready();
-      err.textContent = '';
-    }, 2000);
+    if (!r?.locked) {
+      sfx.play('wrong');
+      root.classList.remove('shake'); void root.offsetWidth; root.classList.add('shake');
+    }
+    const until = Date.now() + Math.max(0, r?.waitMs ?? 2000);
+    onLock?.(until);
+    startLock(root, until, { err, ok, input, wrongCount: r?.wrongCount, onDone: unlock });
   }
   ok.addEventListener('click', trySubmit);
   return p;
 }
 
 // ---- 마지막: 일곱 걸음 ----
-function uiFinal({ length, fragments, onPress, submit }) {
+function uiFinal({ length, fragments, onPress, submit, lockUntil = 0, onLock }) {
   let input = null, busy = false;
   const p = openModal(`${head('🪨', '방위 석단', '마지막 퍼즐 · 일곱 걸음')}
     <p class="m-desc">조각 번호 〔一〕부터 〔七〕까지 차례대로, 조각에 적힌 <b>방위</b>의 돌을 누르세요. 아래 칸의 번호가 조각 번호예요.</p>
@@ -297,6 +321,8 @@ function uiFinal({ length, fragments, onPress, submit }) {
     prev = v;
     ok.disabled = busy || v.length !== length;
   });
+  const unlockF = () => { busy = false; input.clear(); };
+  if (lockUntil > Date.now()) { busy = true; startLock(root, lockUntil, { err, ok, input, onDone: unlockF }); }
   async function go() {
     const v = input.get();
     if (busy || v.length !== length) return;
@@ -304,10 +330,13 @@ function uiFinal({ length, fragments, onPress, submit }) {
     let r;
     try { r = await submit(v); } catch (e) { err.textContent = e.message; busy = false; ok.disabled = false; return; }
     if (r?.ok) { closeModal(v); return; }
-    sfx.play('wrong');
-    root.classList.remove('shake'); void root.offsetWidth; root.classList.add('shake');
-    err.textContent = '돌이 제자리로 돌아갔다. 차례나 방위를 다시 확인해 보자.';
-    setTimeout(() => { busy = false; input.clear(); err.textContent = ''; }, 1500);
+    if (!r?.locked) {
+      sfx.play('wrong');
+      root.classList.remove('shake'); void root.offsetWidth; root.classList.add('shake');
+    }
+    const until = Date.now() + Math.max(0, r?.waitMs ?? 1500);
+    onLock?.(until);
+    startLock(root, until, { err, ok, input, wrongCount: r?.wrongCount, onDone: unlockF });
   }
   ok.addEventListener('click', go);
   return p;
@@ -655,6 +684,7 @@ function mergeResume(sv, r) {
   st.startedAt = r.startedAt;
   st.clockOffset = r.now - Date.now();
   st.finished = !!r.finished;
+  st.locks = Object.fromEntries(Object.entries(r.locks || {}).map(([k, ms]) => [k, Date.now() + ms]));
   if (r.result) st.result = r.result;
   // 열쇠·등잔 보상은 푼 문제에 맞춰 복원
   if (st.solved.includes(0) && !st.flags.daegam_unlocked && !st.items.includes('key')) st.items.push('key');

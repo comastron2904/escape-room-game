@@ -10,6 +10,7 @@ create table if not exists public.configs (
   story       text not null,
   puzzles     jsonb not null,          -- [{ q, image, type: 'number'|'direction', answer, hint }]
   final_seq   text not null,           -- 마지막 석단 퍼즐 정답 (예: NESWNEW)
+  cooldown    jsonb not null default '{"first":3,"step":3,"max":30}', -- 오답 대기 시간(초)
   edit_hash   text not null,           -- 편집 비밀번호 (scrypt)
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
@@ -24,11 +25,16 @@ create table if not exists public.sessions (
   solved      int[] not null default '{}',
   hint_keys   text[] not null default '{}',
   wrong       int not null default 0,
+  penalties   jsonb not null default '{}', -- 문제별 오답 횟수와 대기 끝 시각 { "p3": { "n": 2, "until": 1700000000000 } }
   finished_at timestamptz,
   elapsed_ms  bigint,
   hints       int,
   score_ms    bigint
 );
+-- 예전에 만든 테이블에 새 칸 추가 (이미 있으면 건너뜀)
+alter table public.configs add column if not exists cooldown jsonb not null default '{"first":3,"step":3,"max":30}';
+alter table public.sessions add column if not exists penalties jsonb not null default '{}';
+
 create index if not exists sessions_board_idx on public.sessions (code, score_ms) where finished_at is not null;
 create index if not exists sessions_code_idx on public.sessions (code);
 

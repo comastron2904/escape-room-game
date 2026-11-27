@@ -2,19 +2,19 @@
 // 구성 코드 + 편집 비밀번호로 본인 확인 (계정 없이)
 import { randomInt, randomBytes } from 'node:crypto';
 import { handler, rest, getOne, enc, HttpError, cleanCode, hashPassword, verifyPassword, newCode, isUuid, uploadImage } from './_lib.js';
-import { validatePuzzles, cleanPuzzle } from '../js/game/answer.js';
+import { validatePuzzles, cleanPuzzle, cleanCooldown } from '../js/game/answer.js';
 
 const STORIES = ['seolhwa', 'hong', 'kimsatgat'];
 const COUNT = 7;
 
-function cleanConfig({ title, story, puzzles }) {
+function cleanConfig({ title, story, puzzles, cooldown }) {
   const t = String(title || '').trim().slice(0, 40);
   if (!t) throw new HttpError(400, '게임 제목을 입력해 주세요.');
   if (!STORIES.includes(story)) throw new HttpError(400, '이야기를 골라 주세요.');
   const errs = validatePuzzles(puzzles, COUNT);
   if (errs.length) throw new HttpError(400, errs.join('\n'));
   const ps = puzzles.map(cleanPuzzle);
-  return { title: t, story, puzzles: ps };
+  return { title: t, story, puzzles: ps, cooldown: cleanCooldown(cooldown) };
 }
 
 async function auth(code, password) {
@@ -36,7 +36,7 @@ async function storeImages(code, puzzles) {
   }
   return puzzles;
 }
-const publicFull = (c) => ({ code: c.code, title: c.title, story: c.story, puzzles: c.puzzles, updatedAt: c.updated_at });
+const publicFull = (c) => ({ code: c.code, title: c.title, story: c.story, puzzles: c.puzzles, cooldown: cleanCooldown(c.cooldown), updatedAt: c.updated_at });
 
 export default handler({
   async create(body) {

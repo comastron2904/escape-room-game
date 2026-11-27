@@ -63,6 +63,16 @@
         <h2><span class="num">3</span> 교과 문제 7개</h2>
         <p class="muted">학생이 문제를 풀어 나온 <b>숫자</b> 또는 <b>방향(동서남북)</b>으로 자물쇠를 엽니다. 문제를 하나 풀 때마다 '조각'이 나오고, 일곱 조각을 모으면 8번째 마지막 퍼즐(석단)을 풀 수 있어요.</p>
         <div id="puzzles" class="pz-list"></div>
+        <div class="cd-box">
+          <h3>⏳ 오답 대기 시간</h3>
+          <p class="muted tiny">문제를 틀릴 때마다 다시 입력할 수 있을 때까지 기다리는 시간이 점점 길어져요. (문제마다 따로 세고, 마지막 석단 퍼즐에도 적용)</p>
+          <div class="cd-row">
+            <label class="fld"><span>처음 대기 (초)</span><input id="cdFirst" type="number" min="0" max="600" step="1" inputmode="numeric" /></label>
+            <label class="fld"><span>오답마다 늘어나는 시간 (초)</span><input id="cdStep" type="number" min="0" max="600" step="1" inputmode="numeric" /></label>
+            <label class="fld"><span>최대 대기 (초)</span><input id="cdMax" type="number" min="0" max="600" step="1" inputmode="numeric" /></label>
+          </div>
+          <p class="cd-preview" id="cdPreview"></p>
+        </div>
       </section>
 
       <section class="ed-sec paper" id="saveSec">

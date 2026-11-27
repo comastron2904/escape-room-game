@@ -1,5 +1,5 @@
 // 서버와 주고받기 — 서버(Vercel /api/game)가 있으면 서버로, 없으면(체험판·미리보기) 이 기기 안에서 처리
-import { checkAnswer, publicPuzzle, randomFinalSeq, normalizeDirection } from './game/answer.js';
+import { checkAnswer, publicPuzzle, randomFinalSeq, normalizeDirection, cleanCooldown, registerWrong, lockedFor } from './game/answer.js';
 import { HINT_PENALTY_MS } from './game/content.js';
 
 export class ApiError extends Error {
@@ -49,7 +49,8 @@ export function createLocalBackend(fullConfig, { persist = true } = {}) {
   const db0 = load();
   if (!db0.finalSeq) { db0.finalSeq = randomFinalSeq(fullConfig.puzzles.length); store(db0); }
   const seq = () => load().finalSeq;
-  const pub = () => ({ code: fullConfig.code, title: fullConfig.title, story: fullConfig.story, puzzles: fullConfig.puzzles.map(publicPuzzle), local: true });
+  const cd = cleanCooldown(fullConfig.cooldown);
+  const pub = () => ({ code: fullConfig.code, title: fullConfig.title, story: fullConfig.story, puzzles: fullConfig.puzzles.map(publicPuzzle), cooldown: cd, local: true });
   const sess = (id) => {
     const s = load().sessions[id];
     if (!s) throw new ApiError('기록을 찾지 못했어요. 처음부터 다시 시작해 주세요.', 404);
@@ -68,13 +69,24 @@ export function createLocalBackend(fullConfig, { persist = true } = {}) {
     },
     async resume(id) {
       const s = sess(id);
-      return { code: fullConfig.code, nickname: s.nickname, startedAt: s.startedAt, now: Date.now(), solved: s.solved, hints: s.hintKeys.length, hintKeys: s.hintKeys, finished: !!s.finishedAt, result: s.result || null, fragments: fragments(s) };
+      const pen = s.penalties || {};
+      const locks = Object.fromEntries(Object.keys(pen).map((k) => [k, lockedFor(pen, k)]).filter(([, v]) => v > 0));
+      return { code: fullConfig.code, nickname: s.nickname, startedAt: s.startedAt, now: Date.now(), solved: s.solved, hints: s.hintKeys.length, hintKeys: s.hintKeys, finished: !!s.finishedAt, result: s.result || null, fragments: fragments(s), locks };
     },
     async check(id, i, answer) {
       const s = sess(id);
+      const key = `p${i}`;
+      const left = lockedFor(s.penalties, key);
+      if (left > 0) return { ok: false, locked: true, waitMs: left };
       const ok = checkAnswer(fullConfig.puzzles[i], answer);
-      if (ok && !s.solved.includes(i)) { s.solved.push(i); put(s); }
-      return ok ? { ok: true, fragment: { puzzle: i, order: i + 1, dir: seq()[i] } } : { ok: false };
+      if (!ok) {
+        const w = registerWrong(s.penalties || {}, key, cd);
+        s.penalties = w.pen;
+        put(s);
+        return { ok: false, waitMs: w.waitMs, wrongCount: w.n };
+      }
+      if (!s.solved.includes(i)) { s.solved.push(i); put(s); }
+      return { ok: true, fragment: { puzzle: i, order: i + 1, dir: seq()[i] } };
     },
     async hint(id, key) {
       const s = sess(id);
@@ -85,7 +97,13 @@ export function createLocalBackend(fullConfig, { persist = true } = {}) {
     async final(id, given) {
       const s = sess(id);
       if (s.solved.length < fullConfig.puzzles.length) throw new ApiError('아직 풀지 않은 문제가 있어요.', 400);
-      return { ok: normalizeDirection(given) === seq() };
+      const left = lockedFor(s.penalties, 'final');
+      if (left > 0) return { ok: false, locked: true, waitMs: left };
+      if (normalizeDirection(given) === seq()) return { ok: true };
+      const w = registerWrong(s.penalties || {}, 'final', cd);
+      s.penalties = w.pen;
+      put(s);
+      return { ok: false, waitMs: w.waitMs, wrongCount: w.n };
     },
     async finish(id, given) {
       const s = sess(id);

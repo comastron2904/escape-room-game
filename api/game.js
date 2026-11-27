@@ -1,6 +1,6 @@
 // 학생용 API: 구성 불러오기 · 시작(서버가 시간 기록) · 정답 확인 · 힌트 · 탈출 기록 · 순위표
 import { handler, rest, getOne, enc, HttpError, cleanCode, cleanName, isUuid } from './_lib.js';
-import { checkAnswer, publicPuzzle, normalizeDirection } from '../js/game/answer.js';
+import { checkAnswer, publicPuzzle, normalizeDirection, cleanCooldown, registerWrong, lockedFor } from '../js/game/answer.js';
 
 const HINT_PENALTY_MS = 60_000;
 const HINT_KEY = /^(intro|p\d|final|treasure):\d$|^p\d:t$/;
@@ -32,7 +32,7 @@ export default handler({
 
   async config({ code }) {
     const c = await loadConfig(code);
-    return { code: c.code, title: c.title, story: c.story, puzzles: (c.puzzles || []).map(publicPuzzle) };
+    return { code: c.code, title: c.title, story: c.story, puzzles: (c.puzzles || []).map(publicPuzzle), cooldown: cleanCooldown(c.cooldown) };
   },
 
   async start({ code, nickname }) {
@@ -53,6 +53,7 @@ export default handler({
       code: s.code, nickname: s.nickname, startedAt: Date.parse(s.started_at), now: Date.now(),
       solved: s.solved || [], hints: (s.hint_keys || []).length, hintKeys: s.hint_keys || [],
       finished: !!s.finished_at, result: r, fragments: fragmentsOf(s, c.final_seq),
+      locks: Object.fromEntries(Object.keys(s.penalties || {}).map((k) => [k, lockedFor(s.penalties, k)]).filter(([, v]) => v > 0)),
     };
   },
 
@@ -61,11 +62,16 @@ export default handler({
     const c = await loadConfig(s.code);
     const i = Number(puzzle);
     if (!Number.isInteger(i) || i < 0 || i >= c.puzzles.length) throw new HttpError(400, '잘못된 문제 번호예요.');
-    if (String(answer ?? '').length > 40) return { ok: false };
-    const ok = checkAnswer(c.puzzles[i], answer);
+    const key = `p${i}`;
+    const pen = s.penalties || {};
+    // 대기 시간이 남아 있으면 채점하지 않음 (새로고침해도 유지)
+    const left = lockedFor(pen, key);
+    if (left > 0) return { ok: false, locked: true, waitMs: left };
+    const ok = String(answer ?? '').length <= 40 && checkAnswer(c.puzzles[i], answer);
     if (!ok) {
-      await rest(`sessions?id=eq.${s.id}`, { method: 'PATCH', body: { wrong: (s.wrong || 0) + 1 } });
-      return { ok: false };
+      const w = registerWrong(pen, key, c.cooldown);
+      await rest(`sessions?id=eq.${s.id}`, { method: 'PATCH', body: { wrong: (s.wrong || 0) + 1, penalties: w.pen } });
+      return { ok: false, waitMs: w.waitMs, wrongCount: w.n };
     }
     if (!(s.solved || []).includes(i)) {
       await rest(`sessions?id=eq.${s.id}`, { method: 'PATCH', body: { solved: [...(s.solved || []), i].sort((a, b) => a - b) } });
@@ -94,7 +100,13 @@ export default handler({
     const s = await loadSession(session);
     const c = await loadConfig(s.code);
     if ((s.solved || []).length < c.puzzles.length) throw new HttpError(400, '아직 풀지 않은 문제가 있어요.');
-    return { ok: normalizeDirection(seq) === c.final_seq };
+    const pen = s.penalties || {};
+    const left = lockedFor(pen, 'final');
+    if (left > 0) return { ok: false, locked: true, waitMs: left };
+    if (normalizeDirection(seq) === c.final_seq) return { ok: true };
+    const w = registerWrong(pen, 'final', c.cooldown);
+    await rest(`sessions?id=eq.${s.id}`, { method: 'PATCH', body: { wrong: (s.wrong || 0) + 1, penalties: w.pen } });
+    return { ok: false, waitMs: w.waitMs, wrongCount: w.n };
   },
 
   async finish({ session, seq }) {

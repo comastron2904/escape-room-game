@@ -442,3 +442,6 @@ body.preview-mode .preview-banner { display: block; position: fixed; top: 0; lef
 .q-img { cursor: zoom-in; transition: max-height .2s; }
 .q-img.big { max-height: 70vh; cursor: zoom-out; }
 @media (max-width: 640px) { .ox-btn { width: 96px; height: 96px; font-size: 56px; } }
+/* 오답 대기 중 */
+.locked { opacity: .45; pointer-events: none; filter: grayscale(.4); }
+.lock-sec { display: inline-block; min-width: 42px; padding: 1px 8px; border-radius: 8px; background: var(--red); color: #fff; font-variant-numeric: tabular-nums; }

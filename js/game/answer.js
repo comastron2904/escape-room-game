@@ -146,3 +146,33 @@ export function cleanPuzzle(p) {
   else out.answer = normalizeNumber(p.answer);
   return out;
 }
+
+// ---- 오답 대기 시간 (오답마다 점점 늘어남) ----
+// first: 첫 오답 대기(초) · step: 오답마다 늘어나는 시간(초) · max: 최대 대기(초)
+export const DEFAULT_COOLDOWN = { first: 3, step: 3, max: 30 };
+export function cleanCooldown(c) {
+  const n = (v, d) => {
+    const x = Math.round(Number(v));
+    return Number.isFinite(x) ? Math.max(0, Math.min(600, x)) : d;
+  };
+  const first = n(c?.first, DEFAULT_COOLDOWN.first);
+  const step = n(c?.step, DEFAULT_COOLDOWN.step);
+  const max = Math.max(first, n(c?.max, DEFAULT_COOLDOWN.max));
+  return { first, step, max };
+}
+// n번째 오답 뒤 기다릴 시간(초)
+export function cooldownFor(c, n) {
+  const cd = cleanCooldown(c);
+  return Math.min(cd.max, cd.first + cd.step * Math.max(0, n - 1));
+}
+// 오답 기록 갱신. pen = { 키: { n, until } } → 새 pen 과 대기(ms) 를 돌려줌
+export function registerWrong(pen, key, cd, now = Date.now()) {
+  const cur = pen[key] || { n: 0, until: 0 };
+  const n = cur.n + 1;
+  const waitMs = cooldownFor(cd, n) * 1000;
+  return { pen: { ...pen, [key]: { n, until: now + waitMs } }, waitMs, n };
+}
+export function lockedFor(pen, key, now = Date.now()) {
+  const cur = pen?.[key];
+  return cur && cur.until > now ? cur.until - now : 0;
+}

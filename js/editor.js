@@ -1,7 +1,7 @@
 // 교사용 편집 모드
 import { STORIES, STORY_IDS } from './game/stories.js';
 import { SPOTS, DIRS, PUZZLE_COUNT, DEMO_CONFIG } from './game/content.js';
-import { validatePuzzles, normalizeDirection, normalizeOX, ANSWER_TYPES } from './game/answer.js';
+import { validatePuzzles, normalizeDirection, normalizeOX, ANSWER_TYPES, DEFAULT_COOLDOWN, cleanCooldown, cooldownFor } from './game/answer.js';
 import { formatTime } from './game/state.js';
 
 const $ = (id) => document.getElementById(id);
@@ -9,7 +9,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const DRAFT_KEY = 'hanok.editor.draft';
 
 const blankPuzzle = () => ({ q: '', image: '', type: 'number', answer: '', hint: '', options: ['', '', '', ''] });
-let cfg = { title: '', story: 'seolhwa', puzzles: Array.from({ length: PUZZLE_COUNT }, blankPuzzle) };
+let cfg = { title: '', story: 'seolhwa', puzzles: Array.from({ length: PUZZLE_COUNT }, blankPuzzle), cooldown: { ...DEFAULT_COOLDOWN } };
 let loaded = null; // { code, password }
 
 async function api(action, body) {
@@ -223,6 +223,28 @@ function renderAnswer(box, i) {
   render();
 }
 
+// ---------------- 오답 대기 시간 ----------------
+function renderCooldown() {
+  const cd = cleanCooldown(cfg.cooldown);
+  cfg.cooldown = cd;
+  $('cdFirst').value = cd.first; $('cdStep').value = cd.step; $('cdMax').value = cd.max;
+  updateCooldownPreview();
+}
+function updateCooldownPreview() {
+  const raw = { first: $('cdFirst').value, step: $('cdStep').value, max: $('cdMax').value };
+  const cd = cleanCooldown(raw);
+  cfg.cooldown = cd;
+  const seq = [1, 2, 3, 4, 5].map((n) => `${cooldownFor(cd, n)}초`);
+  let reach = 1;
+  while (reach < 200 && cooldownFor(cd, reach) < cd.max) reach++;
+  const fix = Number(raw.max) < Number(raw.first) ? ' · 최대값이 처음 값보다 작아서 처음 값에 맞췄어요' : '';
+  $('cdPreview').innerHTML = cd.first === 0 && cd.step === 0
+    ? '대기 없이 바로 다시 입력할 수 있어요.'
+    : `1번째 오답 → <b>${seq[0]}</b>, 2번째 → <b>${seq[1]}</b>, 3번째 → <b>${seq[2]}</b>, 4번째 → <b>${seq[3]}</b>, 5번째 → <b>${seq[4]}</b> … ${reach < 200 ? `${reach}번째부터 계속 <b>${cd.max}초</b>` : ''}${fix}`;
+  saveDraft();
+}
+['cdFirst', 'cdStep', 'cdMax'].forEach((id) => $(id).addEventListener('input', updateCooldownPreview));
+
 // ---------------- 시작 ----------------
 function openEditor() {
   $('entry').hidden = true;
@@ -235,6 +257,7 @@ function openEditor() {
   $('boardSec').hidden = !loaded;
   renderStories();
   renderPuzzles();
+  renderCooldown();
   if (loaded) { showResult(loaded.code); loadBoard(); }
   window.scrollTo(0, 0);
 }
@@ -251,7 +274,7 @@ $('newBtn').addEventListener('click', () => {
   try { d = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); } catch { /* 무시 */ }
   if (d && !d.code && d.cfg && confirm('저장하지 않은 작성 중인 구성이 있어요. 이어서 작성할까요?\n(취소를 누르면 빈 구성으로 시작)')) cfg = d.cfg;
   else if (confirm('체험판 예시 문제를 채워 넣고 시작할까요?\n(취소를 누르면 빈 칸으로 시작)')) {
-    cfg = { title: '', story: 'seolhwa', puzzles: DEMO_CONFIG.puzzles.map((p) => ({ image: '', hint: '', options: ['', '', '', ''], ...p })) };
+    cfg = { title: '', story: 'seolhwa', puzzles: DEMO_CONFIG.puzzles.map((p) => ({ image: '', hint: '', options: ['', '', '', ''], ...p })), cooldown: { ...DEFAULT_COOLDOWN } };
   }
   loaded = null;
   openEditor();
@@ -265,7 +288,7 @@ $('loadForm').addEventListener('submit', async (e) => {
   if (!code || !password) { $('loadErr').textContent = '코드와 비밀번호를 입력해 주세요.'; return; }
   try {
     const c = await api('load', { code, password });
-    cfg = { title: c.title, story: c.story, puzzles: c.puzzles.map((p) => ({ image: '', hint: '', options: ['', '', '', ''], ...p })) };
+    cfg = { title: c.title, story: c.story, puzzles: c.puzzles.map((p) => ({ image: '', hint: '', options: ['', '', '', ''], ...p })), cooldown: cleanCooldown(c.cooldown) };
     loaded = { code: c.code, password };
     openEditor();
     toast(`${c.code} 구성을 불러왔어요.`);
@@ -286,7 +309,7 @@ $('previewBtn').addEventListener('click', () => {
   const errs = collect();
   if (errs.length) { $('saveErr').textContent = `미리 해보기 전에 고쳐 주세요:\n${errs.join('\n')}`; return; }
   $('saveErr').textContent = '';
-  const data = JSON.stringify({ code: 'PREVIEW', title: cfg.title, story: cfg.story, puzzles: cfg.puzzles });
+  const data = JSON.stringify({ code: 'PREVIEW', title: cfg.title, story: cfg.story, puzzles: cfg.puzzles, cooldown: cleanCooldown(cfg.cooldown) });
   try { sessionStorage.setItem('hanok.preview', data); } catch { /* 무시 */ }
   try { localStorage.setItem('hanok.preview', data); } catch { /* 그림이 커서 못 담으면 sessionStorage 사용 */ }
   window.open('./?preview=1', '_blank');

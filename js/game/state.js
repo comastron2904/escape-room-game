@@ -17,6 +17,7 @@ export function freshState(extra = {}) {
     hintKeys: [],       // 본 힌트
     hintTexts: {},      // 교사 힌트 문장 (받아 온 것)
     hintsUsed: 0,
+    locks: {},          // 오답 대기 끝 시각 { p3: ms, final: ms }
     area: 'village',
     pos: null,
     startedAt: 0,       // 서버 기준 시작 시각(ms)
