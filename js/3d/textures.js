@@ -812,3 +812,67 @@ export function foliageTexture(kind, seed = 1) {
     }
   });
 }
+
+// ================= 조사 표시 (핀 모양) =================
+// 흰 눈 배경에서도 잘 보이도록 진한 색 + 흰 테두리 + 어두운 외곽선
+export const MARKER_STYLE = {
+  puzzle: { fill: '#d63a2a', glyph: '?', label: '문제' },
+  final: { fill: '#7b3fd1', glyph: '★', label: '석단' },
+  story: { fill: '#2468d8', glyph: '!', label: '이야기' },
+  door: { fill: '#23875a', glyph: '門', label: '집' },
+  exit: { fill: '#2b8a95', glyph: '出', label: '나가기' },
+  done: { fill: '#7d8794', glyph: '✓', label: '완료' },
+  flavor: { fill: '#55657d', glyph: '…', label: '조사' },
+};
+export function markerTexture(kind) {
+  const st = MARKER_STYLE[kind] || MARKER_STYLE.flavor;
+  return canvasTexture(128, 160, (ctx, w) => {
+    const cx = w / 2, cy = 56, R = 46;
+    const pin = () => {
+      ctx.beginPath();
+      ctx.arc(cx, cy, R, Math.PI * 0.82, Math.PI * 0.18);
+      ctx.lineTo(cx, 152);
+      ctx.closePath();
+    };
+    // 그림자 겸 외곽선
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.45)';
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetY = 3;
+    pin();
+    ctx.fillStyle = '#1b1410';
+    ctx.fill();
+    ctx.restore();
+    ctx.lineJoin = 'round';
+    pin();
+    ctx.lineWidth = 12; ctx.strokeStyle = '#1b1410'; ctx.stroke();
+    ctx.lineWidth = 7; ctx.strokeStyle = '#ffffff'; ctx.stroke();
+    pin();
+    const g = ctx.createLinearGradient(0, cy - R, 0, 150);
+    g.addColorStop(0, st.fill);
+    g.addColorStop(1, shadeHex(st.fill, -0.18));
+    ctx.fillStyle = g;
+    ctx.fill();
+    // 윗부분 광택
+    ctx.beginPath();
+    ctx.ellipse(cx - 10, cy - 22, 22, 11, -0.4, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.22)';
+    ctx.fill();
+    // 글자
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const serif = /[門出]/.test(st.glyph);
+    ctx.font = `900 ${serif ? 50 : 62}px ${serif ? SERIF : FONT}`;
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+    ctx.strokeText(st.glyph, cx, cy + 3);
+    ctx.fillText(st.glyph, cx, cy + 3);
+  });
+}
+
+function shadeHex(hex, amt) {
+  const n = parseInt(hex.slice(1), 16);
+  const f = (v) => Math.max(0, Math.min(255, Math.round(v + 255 * amt)));
+  return `rgb(${f((n >> 16) & 255)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}

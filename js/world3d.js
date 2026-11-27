@@ -10,7 +10,7 @@ import { loadCharacterLibrary, instantiateCharacter, createCharacterPreview, pre
 import { createNavGrid } from './3d/pathfind.js';
 import { bakeStatic } from './3d/bake.js';
 import { createMaterials } from './3d/hanok.js';
-import { softShadowTexture, sparkleTexture, setMaxAnisotropy, canvasTexture, snowflakeTexture } from './3d/textures.js';
+import { softShadowTexture, setMaxAnisotropy, canvasTexture, snowflakeTexture, markerTexture, MARKER_STYLE } from './3d/textures.js';
 import { buildAreas, CABINET_PUZZLE_DRAWER } from './areas.js';
 
 const WALK_SPEED = 2.4;
@@ -214,22 +214,34 @@ export async function createWorld(canvas, options) {
     snowU.uCam.value.set(camTarget.x, 0, camTarget.z);
   }
 
-  // 반짝이 표시
-  const sparkTex = sparkleTexture();
+  // 조사 표시: 머리 위 핀(화면에서 항상 같은 크기) + 문제 장소 바닥 고리
+  const markerTex = Object.fromEntries(Object.keys(MARKER_STYLE).map((k) => [k, markerTexture(k)]));
+  const RING_COLOR = { puzzle: 0xd63a2a, final: 0x7b3fd1 };
+  const ringGeo = new THREE.RingGeometry(0.55, 0.72, 48);
+  const kindOf = (id) => options.game?.markerKind?.(id) || 'flavor';
   for (const a of Object.values(areas)) {
     for (const it of a.inters) {
-      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: sparkTex, transparent: true, depthWrite: false, opacity: 0, color: 0xffffff }));
-      s.scale.setScalar(0.42);
-      s.position.copy(a.toWorld(it.marker[0], it.marker[2], it.marker[1]));
-      s.renderOrder = 5;
+      const kind = kindOf(it.id);
+      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: markerTex[kind], transparent: true, depthWrite: false, depthTest: false, opacity: 0, sizeAttenuation: false }));
+      s.center.set(0.5, 0);
+      s.position.copy(a.toWorld(it.marker[0], it.marker[2], it.marker[1] + 0.15));
+      s.renderOrder = 20;
       scene.add(s);
       it.sprite = s;
+      it.kind = kind;
       it.baseY = s.position.y;
+      const g = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: RING_COLOR.puzzle, transparent: true, opacity: 0, depthWrite: false }));
+      g.rotation.x = -Math.PI / 2;
+      g.position.copy(a.toWorld(it.x, it.z, 0.03));
+      g.renderOrder = 4;
+      g.visible = false;
+      scene.add(g);
+      it.groundRing = g;
     }
   }
 
   // 가까이 갔을 때 바닥 링
-  const ring = new THREE.Mesh(new THREE.RingGeometry(0.42, 0.52, 40), new THREE.MeshBasicMaterial({ color: 0xffe28a, transparent: true, opacity: 0, depthWrite: false }));
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.42, 0.54, 40), new THREE.MeshBasicMaterial({ color: 0xe8590c, transparent: true, opacity: 0, depthWrite: false }));
   ring.rotation.x = -Math.PI / 2;
   ring.renderOrder = 3;
   scene.add(ring);
@@ -319,7 +331,7 @@ export async function createWorld(canvas, options) {
     distTarget = (e.dist ?? 15) * (portrait() ? 1.25 : 1);
     dist = distTarget;
     for (const x of Object.values(areas)) x.root.visible = x === a;
-    for (const x of Object.values(areas)) for (const it of x.inters) it.sprite.visible = x === a;
+    for (const x of Object.values(areas)) for (const it of x.inters) { it.sprite.visible = x === a; if (x !== a) it.groundRing.visible = false; }
   }
 
   function snapCamera() {
@@ -424,7 +436,7 @@ export async function createWorld(canvas, options) {
     return { x: Math.max(0.4, Math.min(area.w - 0.4, lx)), z: Math.max(0.4, Math.min(area.d - 0.4, lz)) };
   }
 
-  const ripple = new THREE.Mesh(new THREE.RingGeometry(0.22, 0.3, 40), new THREE.MeshBasicMaterial({ color: 0xffe28a, transparent: true, opacity: 0, depthWrite: false }));
+  const ripple = new THREE.Mesh(new THREE.RingGeometry(0.22, 0.32, 40), new THREE.MeshBasicMaterial({ color: 0xe8590c, transparent: true, opacity: 0, depthWrite: false }));
   ripple.rotation.x = -Math.PI / 2;
   ripple.renderOrder = 3;
   scene.add(ripple);
@@ -683,17 +695,33 @@ export async function createWorld(canvas, options) {
       if (near === it) activate(it);
     }
 
-    // 반짝이 + 링 + 하이라이트
+    // 조사 표시 + 바닥 고리 + 하이라이트
+    const refreshKinds = visT === 0;
     for (const it of area.inters) {
       const vis = visibleInter(it);
+      if (refreshKinds) {
+        const k = kindOf(it.id);
+        if (k !== it.kind) { it.kind = k; it.sprite.material.map = markerTex[k]; }
+      }
       const d = Math.hypot(player.x - it.x, player.z - it.z);
-      const prox = vis ? Math.max(0, Math.min(1, (9 - d) / 4)) : 0;
-      const fresh = options.game?.isNew(it.id) ? 1 : 0.35;
+      const k = it.kind;
+      // 문제·석단은 멀리서도 보이고, 나머지는 가까이 가야 보임
+      const range = k === 'puzzle' || k === 'final' ? 60 : k === 'story' || k === 'door' || k === 'exit' ? 15 : 8;
+      let prox = vis ? Math.max(0, Math.min(1, (range - d) / 3)) : 0;
+      if ((k === 'story' || k === 'flavor') && !options.game?.isNew(it.id)) prox *= 0.55;
       it.glowT += ((it === near ? 1 : 0) - it.glowT) * Math.min(1, dt * 6);
-      it.sprite.material.opacity = prox * fresh * (0.65 + Math.sin(time * 3 + it.x) * 0.25) * (1 - it.glowT * 0.5);
-      it.sprite.position.y = it.baseY + Math.sin(time * 2 + it.z) * 0.06;
-      const sc = 0.36 + Math.sin(time * 4 + it.x * 3) * 0.05;
-      it.sprite.scale.set(sc, sc, 1);
+      it.sprite.material.opacity = prox;
+      it.sprite.position.y = it.baseY + Math.abs(Math.sin(time * 2.2 + it.z)) * 0.18;
+      const sc = (k === 'flavor' || k === 'done' ? 0.032 : 0.042) * (1 + it.glowT * 0.18);
+      it.sprite.scale.set(sc, sc * 1.25, 1);
+      const ringOn = vis && (k === 'puzzle' || k === 'final') && it !== near;
+      it.groundRing.visible = ringOn;
+      if (ringOn) {
+        it.groundRing.material.color.setHex(RING_COLOR[k]);
+        const ph = (time * 0.9 + it.x * 0.1) % 1;
+        it.groundRing.scale.setScalar(0.8 + ph * 0.7);
+        it.groundRing.material.opacity = (1 - ph) * 0.85;
+      }
       if (it.highlight) it.highlight(it.glowT, time);
     }
     if (near) {

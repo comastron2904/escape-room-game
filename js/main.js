@@ -636,7 +636,7 @@ function showNear(id) {
 let busyInteract = false;
 async function onActivate(id) {
   if (busyInteract || !$('modal').hidden) return;
-  if (performance.now() - lastModalClose < 350) return;
+  if (performance.now() - lastModalClose < 250) return;
   busyInteract = true;
   try { await game.interact(id); } catch (e) {
     console.error('[hanok] 상호작용 오류', e);

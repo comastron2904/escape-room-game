@@ -63,6 +63,16 @@ export function createGame({ state, ui, world, save, backend, config, story }) {
     return { title, action };
   }
   const isNew = (id) => !state.seen.includes(id);
+  const STORY_IDS = ['jangseung', 'stele', 'letter', 'mirror', 'yakbang_note', 'scroll_byeoldang', 'scroll_seodang'];
+  // 머리 위 표시 종류
+  function markerKind(id) {
+    if (id in SPOT_INDEX) return state.solved.includes(SPOT_INDEX[id]) ? 'done' : 'puzzle';
+    if (id === 'altar' || id === 'stairs' || id === 'chest') return state.finished && id === 'chest' ? 'done' : 'final';
+    if (id.startsWith('door_')) return 'door';
+    if (id.startsWith('exit_')) return 'exit';
+    if (STORY_IDS.includes(id)) return 'story';
+    return 'flavor';
+  }
 
   async function interact(id) {
     markSeen(state, id);
@@ -217,7 +227,7 @@ export function createGame({ state, ui, world, save, backend, config, story }) {
     save();
   }
 
-  return { interact, labelFor, isNew, goalList, revealHint };
+  return { interact, labelFor, isNew, markerKind, goalList, revealHint };
 }
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
