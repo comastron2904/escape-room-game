@@ -50,14 +50,26 @@ function closeModal(value, silent = false) {
   const r = modalResolve;
   modalResolve = null;
   if (!silent) world?.setPaused(false);
+  lastModalClose = performance.now();
   r?.(value);
 }
 $('modal').addEventListener('click', (e) => { if (e.target === $('modal') && !$('modal').dataset.locked) closeModal(null); });
+// 팝업이 떠 있을 때의 키 처리 (캡처 단계에서 먼저 받아, 같은 Enter 가 게임 조작으로 넘어가지 않게 함)
+let lastModalClose = 0;
 window.addEventListener('keydown', (e) => {
   if ($('modal').hidden) return;
+  e.stopImmediatePropagation();
   if (e.key === 'Escape' && !$('modal').dataset.locked) { e.preventDefault(); closeModal(null); return; }
   modalOnKey?.(e);
-});
+  if (e.defaultPrevented || $('modal').hidden) return;
+  // 따로 정하지 않은 팝업은 Enter 로 닫기 (확인 버튼이 있으면 그 버튼을 누른 것처럼)
+  if (e.key === 'Enter' && !e.repeat && !['INPUT', 'TEXTAREA'].includes(e.target.tagName)) {
+    e.preventDefault();
+    const ok = card().querySelector('[data-ok]:not(:disabled)');
+    if (ok && !ok.closest('.m-actions')?.querySelector('.btn-ghost[data-close]')) ok.click();
+    else closeModal(null);
+  }
+}, true);
 const head = (icon, title, from = '', close = true) => `
   <div class="m-head">
     <div class="m-icon">${icon || '📜'}</div>
@@ -68,7 +80,7 @@ const card = () => $('modalCard');
 function bindClose(value = null) {
   card().querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => closeModal(value)));
 }
-const okKey = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); closeModal(true); } };
+const okKey = (e) => { if ((e.key === 'Enter' || e.key === ' ') && !e.repeat) { e.preventDefault(); closeModal(true); } };
 
 function uiText({ title, from, text, icon, isNew }) {
   const p = openModal(`${head(icon, title, from)}
@@ -624,6 +636,7 @@ function showNear(id) {
 let busyInteract = false;
 async function onActivate(id) {
   if (busyInteract || !$('modal').hidden) return;
+  if (performance.now() - lastModalClose < 350) return;
   busyInteract = true;
   try { await game.interact(id); } catch (e) {
     console.error('[hanok] 상호작용 오류', e);
