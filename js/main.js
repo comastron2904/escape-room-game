@@ -3,7 +3,7 @@ import { generateLook, drawCharacter, loadProfile, saveProfile } from './charact
 import { loadSave, saveState, clearSave, freshState, formatTime } from './game/state.js';
 import { createGame } from './game/logic.js';
 import { ITEMS, DIRS, DIR_KEYS, DEMO_CONFIG, HINT_PENALTY_MS, PUZZLE_COUNT, fragmentText } from './game/content.js';
-import { getStory } from './game/stories.js';
+import { getStory, fixJosa } from './game/stories.js';
 import { createRemoteBackend, createLocalBackend } from './api.js';
 import { ANSWER_TYPES } from './game/answer.js';
 import { loadCharacterLibrary, createCharacterPreview } from './3d/characters.js';
@@ -489,7 +489,7 @@ function showIntro() {
     ? '• 화면을 누르면 그곳으로 걸어가요. 누른 채 끌면 따라가요.\n• 반짝이는 곳을 누르면 다가가서 조사해요.\n• 두 손가락으로 확대/축소'
     : '• WASD / 방향키로 이동, Shift 로 달리기\n• 반짝이는 곳에 다가가 E 또는 Space 로 조사\n• 클릭해도 걸어가서 조사해요. 휠로 확대/축소';
   return uiText({
-    title: config.title, from: `${story.name}의 전설`,
+    title: config.title, from: (story.legend || `${story.name}의 전설`),
     text: `${story.synopsis}\n\n마을 곳곳 일곱 곳에 문제가 숨겨져 있어요. 문제를 풀어 자물쇠를 열 때마다 조각을 하나씩 얻고, 일곱 조각을 모아 중앙 마당의 석단 퍼즐을 풀면 보물로 가는 길이 열립니다.\n\n─ 조작 방법 ─\n${how}\n\n막히면 💡 힌트(1개당 +1분), 모은 조각은 📒 수첩에서 볼 수 있어요.`,
     icon: '🏯',
   });
@@ -501,7 +501,7 @@ function uiEnding() {
       <div class="trophy">🏆</div>
       <p class="get-kicker">탈출 성공</p>
       <h2>${esc(story.endingTitle)}</h2>
-      <p class="m-desc">일곱 문제를 모두 풀고 ${esc(story.treasure)}을(를) 찾았어요.</p>
+      <p class="m-desc">${esc(fixJosa(`일곱 문제를 모두 풀고 ${story.treasure}을(를) 찾았어요.`))}</p>
       <div class="stats">
         <div class="stat"><b>${formatTime(r.elapsedMs)}</b><span>걸린 시간</span></div>
         <div class="stat"><b>${r.hints ?? 0}</b><span>힌트 (+${r.hints ?? 0}분)</span></div>
@@ -733,7 +733,7 @@ function waitInLobby() {
   return new Promise((resolve) => {
     const el = $('lobby');
     $('lobbyTitle').textContent = config.title || story.title;
-    $('lobbyStory').textContent = `${story.name}의 전설`;
+    $('lobbyStory').textContent = (story.legend || `${story.name}의 전설`);
     $('lobbyName').textContent = state.nickname;
     $('lobbyText').textContent = `${story.synopsis}\n\n마을 곳곳 일곱 곳에 문제가 숨겨져 있어요. 문제를 풀어 자물쇠를 열 때마다 조각을 하나씩 얻고, 일곱 조각을 모아 중앙 마당의 석단 퍼즐을 풀면 보물로 가는 길이 열립니다.\n\n• 이동: ${document.body.classList.contains('touch') ? '화면을 눌러 이동' : 'WASD / 방향키, 클릭'}\n• 조사: 핀이 있는 곳에서 ${document.body.classList.contains('touch') ? '버튼 누르기' : 'E 또는 Space'}\n• 💡 힌트는 1개당 +1분, 오답을 내면 잠시 기다려야 해요.`;
     el.hidden = false;
@@ -861,7 +861,7 @@ async function main() {
     look = generateLook(state.nickname, res.roll);
     save();
   }
-  story = getStory(config.story);
+  story = getStory(config.story, config.storyVars);
   $('gameTitle').textContent = config.title || story.title;
   document.title = `${config.title || story.title} · 3D 방탈출`;
   $('loading').classList.remove('done');

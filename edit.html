@@ -17,7 +17,6 @@
     </div>
     <div class="ed-top-actions">
       <span id="codeBadge" class="code-badge" hidden></span>
-      <button id="goRoom" class="btn btn-gold btn-sm" type="button" hidden>🎮 수업 진행</button>
       <a class="btn btn-ghost btn-sm" href="./" target="_blank" rel="noopener">학생 화면 열기 ↗</a>
     </div>
   </header>
@@ -43,90 +42,125 @@
       </div>
     </section>
 
-    <!-- 편집 -->
-    <form id="editor" class="ed-form" hidden autocomplete="off" novalidate>
-      <section class="ed-sec paper">
-        <h2><span class="num">1</span> 게임 제목</h2>
-        <input id="title" class="ed-input big" maxlength="40" placeholder="예: 5학년 2반 수학 방탈출" />
-        <p class="muted tiny">학생 화면 왼쪽 위에 보여요.</p>
-      </section>
-
-      <section class="ed-sec paper">
-        <h2><span class="num">2</span> 이야기 고르기</h2>
-        <div id="stories" class="story-cards"></div>
-        <details class="storyboard" open>
-          <summary>📽️ 고른 이야기의 스토리보드 보기</summary>
-          <ol id="storyboard" class="sb-list"></ol>
-        </details>
-      </section>
-
-      <section class="ed-sec paper">
-        <h2><span class="num">3</span> 교과 문제 7개</h2>
-        <p class="muted">학생이 문제를 풀어 나온 <b>숫자</b> 또는 <b>방향(동서남북)</b>으로 자물쇠를 엽니다. 문제를 하나 풀 때마다 '조각'이 나오고, 일곱 조각을 모으면 8번째 마지막 퍼즐(석단)을 풀 수 있어요.</p>
-        <div id="puzzles" class="pz-list"></div>
-        <div class="cd-box">
-          <h3>⏳ 오답 대기 시간</h3>
-          <p class="muted tiny">문제를 틀릴 때마다 다시 입력할 수 있을 때까지 기다리는 시간이 점점 길어져요. (문제마다 따로 세고, 마지막 석단 퍼즐에도 적용)</p>
-          <div class="cd-row">
-            <label class="fld"><span>처음 대기 (초)</span><input id="cdFirst" type="number" min="0" max="600" step="1" inputmode="numeric" /></label>
-            <label class="fld"><span>오답마다 늘어나는 시간 (초)</span><input id="cdStep" type="number" min="0" max="600" step="1" inputmode="numeric" /></label>
-            <label class="fld"><span>최대 대기 (초)</span><input id="cdMax" type="number" min="0" max="600" step="1" inputmode="numeric" /></label>
-          </div>
-          <p class="cd-preview" id="cdPreview"></p>
-        </div>
-      </section>
-
-      <section class="ed-sec paper" id="saveSec">
-        <h2><span class="num">4</span> 저장하고 코드 받기</h2>
-        <div id="pwNew">
-          <div class="pw-row">
-            <label class="fld"><span>편집 비밀번호 (4자 이상)</span><input id="pw1" type="password" maxlength="64" /></label>
-            <label class="fld"><span>비밀번호 확인</span><input id="pw2" type="password" maxlength="64" /></label>
-          </div>
-          <p class="muted tiny">나중에 문제를 고치거나 순위표를 관리할 때 필요해요. 잊어버리면 찾을 수 없으니 꼭 기억해 두세요.</p>
-        </div>
-        <p class="muted" id="pwLoaded" hidden>불러올 때 입력한 비밀번호로 저장해요.</p>
-        <div class="ed-actions">
+    <!-- 편집: 왼쪽 메뉴 + 오른쪽 내용 -->
+    <form id="editor" class="ed-shell" hidden autocomplete="off" novalidate>
+      <aside class="ed-side paper">
+        <nav class="side-nav" id="sideNav">
+          <p class="side-cap">만들기</p>
+          <button type="button" class="nav-item" data-go="basic"><span class="ni">📋</span><span>제목 · 이야기</span><em class="nav-st" id="navBasicSt"></em></button>
+          <button type="button" class="nav-item" data-go="puzzles"><span class="ni">🧩</span><span>교과 문제</span><em class="nav-st" id="navPzSt"></em></button>
+          <div class="nav-pz" id="navPuzzles"></div>
+          <button type="button" class="nav-item" data-go="cooldown"><span class="ni">⏳</span><span>오답 대기 시간</span></button>
+          <button type="button" class="nav-item" data-go="save"><span class="ni">💾</span><span>저장 · 코드</span><em class="nav-st" id="navSaveSt"></em></button>
+          <p class="side-cap" data-after-save hidden>수업</p>
+          <button type="button" class="nav-item" data-go="room" data-after-save hidden><span class="ni">🎮</span><span>수업 진행</span><em class="nav-st live" id="navRoomSt"></em></button>
+          <button type="button" class="nav-item" data-go="board" data-after-save hidden><span class="ni">🏆</span><span>순위표</span></button>
+        </nav>
+        <div class="side-actions">
           <button id="previewBtn" class="btn btn-ghost" type="button">👀 미리 해보기</button>
           <button id="saveBtn" class="btn btn-gold" type="submit">💾 저장하기</button>
+          <p class="err tiny" id="saveErr"></p>
         </div>
-        <p class="err" id="saveErr"></p>
-        <div id="result" class="result" hidden>
-          <p class="event-kicker">구성 코드</p>
-          <div class="big-code" id="resultCode"></div>
-          <p class="muted">학생은 아래 주소로 들어가거나, 게임 첫 화면에 코드를 입력하면 돼요.</p>
-          <div class="copy-row"><input id="studentLink" readonly /><button type="button" class="btn btn-gold btn-sm" id="copyLink">주소 복사</button></div>
-        </div>
-      </section>
+      </aside>
 
-      <section class="ed-sec paper" id="roomSec" hidden>
-        <h2><span class="num">5</span> 수업 진행 (대기실)</h2>
-        <p class="muted">학생은 코드를 넣고 들어오면 <b>대기</b> 상태로 기다려요. <b>시작</b>을 누르면 5초 카운트다운 후 모두 같은 순간에 출발하고, 시간도 그때부터 재요.</p>
-        <div class="room-panel">
-          <div class="room-status"><span id="roomBadge" class="room-badge">불러오는 중</span><span id="roomClock" class="room-clock"></span></div>
-          <div class="room-counts">
-            <div><b id="cntOnline">0</b><span id="cntOnlineLabel">명 대기 중</span></div>
-            <div><b id="cntPlaying">0</b><span>명 진행 중</span></div>
-            <div><b id="cntFinished">0</b><span>명 탈출</span></div>
+      <div class="ed-panels">
+        <!-- 1. 제목 · 이야기 -->
+        <section class="ed-panel paper" data-panel="basic">
+          <header class="panel-head"><h2>📋 제목 · 이야기</h2><p class="muted">게임 제목을 적고, 학생들이 따라갈 이야기를 하나 골라요.</p></header>
+          <label class="fld big-fld"><span>게임 제목 (학생 화면 왼쪽 위에 보여요)</span><input id="title" class="ed-input big" maxlength="40" placeholder="예: 5학년 2반 수학 방탈출" /></label>
+          <div class="basic-grid">
+            <div>
+              <h3 class="sub-h">이야기 고르기</h3>
+              <div id="stories" class="story-cards"></div>
+              <div id="storyVarsBox" class="story-vars" hidden>
+                <h3 class="sub-h">✏️ 우리 반 맞춤 이야기</h3>
+                <label class="fld"><span>선생님 이름 (예: 김민지 선생님)</span><input id="svTeacher" maxlength="20" placeholder="선생님" /></label>
+                <label class="fld"><span>선물 이름 (예: 간식 상자, 칭찬 스티커)</span><input id="svGift" maxlength="30" placeholder="특별한 선물" /></label>
+                <label class="fld"><span>마지막에 보여 줄 편지</span><textarea id="svLetter" maxlength="800" placeholder="비워 두면 기본 편지가 나와요"></textarea></label>
+              </div>
+            </div>
+            <div class="sb-col">
+              <h3 class="sub-h">📽️ 스토리보드</h3>
+              <ol id="storyboard" class="sb-list"></ol>
+            </div>
           </div>
-          <div class="room-actions">
-            <button id="roomStart" class="btn btn-gold big-btn" type="button">▶ 시작</button>
-            <button id="roomEnd" class="btn btn-red big-btn" type="button">■ 종료</button>
-            <button id="roomReset" class="btn btn-ghost" type="button">↺ 새 판 열기 (다시 대기)</button>
-          </div>
-          <p class="muted tiny">'새 판 열기'를 누르면 다시 대기 상태가 되고, 학생들은 처음 화면에서 다시 들어와야 해요. 이전 판 기록은 순위표에서 빠져요(삭제되지는 않음).</p>
-          <p class="err" id="roomErr"></p>
-        </div>
-      </section>
+        </section>
 
-      <section class="ed-sec paper" id="boardSec" hidden>
-        <h2><span class="num">6</span> 순위표 관리</h2>
-        <div class="ed-actions left">
-          <button id="refreshBoard" class="btn btn-ghost btn-sm" type="button">🔄 새로고침</button>
-          <button id="resetBoard" class="btn btn-red btn-sm" type="button">전체 기록 지우기</button>
-        </div>
-        <div id="boardBox" class="board-wrap"></div>
-      </section>
+        <!-- 2. 교과 문제 -->
+        <section class="ed-panel paper" data-panel="puzzles" hidden>
+          <header class="panel-head row-head">
+            <div><h2>🧩 교과 문제 <span id="pzNow">1</span> / 7</h2><p class="muted">숫자·방향·단답형·객관식·O/X 중 정답 종류를 고르고, 그림도 붙일 수 있어요.</p></div>
+            <div class="pz-pager"><button type="button" class="btn btn-ghost btn-sm" id="pzPrev">◀ 이전</button><button type="button" class="btn btn-ghost btn-sm" id="pzNext">다음 ▶</button></div>
+          </header>
+          <div id="puzzles" class="pz-list"></div>
+        </section>
+
+        <!-- 3. 오답 대기 시간 -->
+        <section class="ed-panel paper" data-panel="cooldown" hidden>
+          <header class="panel-head"><h2>⏳ 오답 대기 시간</h2><p class="muted">문제를 틀릴 때마다 다시 입력할 수 있을 때까지 기다리는 시간이 점점 길어져요. (문제마다 따로 세고, 마지막 석단 퍼즐에도 적용)</p></header>
+          <div class="cd-box">
+            <div class="cd-row">
+              <label class="fld"><span>처음 대기 (초)</span><input id="cdFirst" type="number" min="0" max="600" step="1" inputmode="numeric" /></label>
+              <label class="fld"><span>오답마다 늘어나는 시간 (초)</span><input id="cdStep" type="number" min="0" max="600" step="1" inputmode="numeric" /></label>
+              <label class="fld"><span>최대 대기 (초)</span><input id="cdMax" type="number" min="0" max="600" step="1" inputmode="numeric" /></label>
+            </div>
+            <p class="cd-preview" id="cdPreview"></p>
+          </div>
+        </section>
+
+        <!-- 4. 저장 · 코드 -->
+        <section class="ed-panel paper" data-panel="save" id="saveSec" hidden>
+          <header class="panel-head"><h2>💾 저장 · 코드 받기</h2><p class="muted">왼쪽 아래 <b>저장하기</b>를 누르면 학생에게 알려 줄 구성 코드가 나와요.</p></header>
+          <div id="pwNew">
+            <div class="pw-row">
+              <label class="fld"><span>편집 비밀번호 (4자 이상)</span><input id="pw1" type="password" maxlength="64" /></label>
+              <label class="fld"><span>비밀번호 확인</span><input id="pw2" type="password" maxlength="64" /></label>
+            </div>
+            <p class="muted tiny">나중에 문제를 고치거나 수업을 진행할 때 필요해요. 잊어버리면 찾을 수 없으니 꼭 기억해 두세요.</p>
+          </div>
+          <p class="muted" id="pwLoaded" hidden>불러올 때 입력한 비밀번호로 저장해요.</p>
+          <div class="check-list" id="checkList"></div>
+          <div id="result" class="result" hidden>
+            <p class="event-kicker">구성 코드</p>
+            <div class="big-code" id="resultCode"></div>
+            <p class="muted">학생은 아래 주소로 들어가거나, 게임 첫 화면에 코드를 입력하면 돼요.</p>
+            <div class="copy-row"><input id="studentLink" readonly /><button type="button" class="btn btn-gold btn-sm" id="copyLink">주소 복사</button></div>
+          </div>
+        </section>
+
+        <!-- 5. 수업 진행 -->
+        <section class="ed-panel paper" data-panel="room" id="roomSec" hidden>
+          <header class="panel-head"><h2>🎮 수업 진행 (대기실)</h2><p class="muted">학생은 코드를 넣고 들어오면 <b>대기</b> 상태로 기다려요. <b>시작</b>을 누르면 5초 카운트다운 후 모두 같은 순간에 출발하고, 시간도 그때부터 재요.</p></header>
+          <div class="room-grid">
+            <div class="room-panel">
+              <div class="room-status"><span id="roomBadge" class="room-badge">불러오는 중</span><span id="roomClock" class="room-clock"></span></div>
+              <div class="room-counts">
+                <div><b id="cntOnline">0</b><span id="cntOnlineLabel">명 대기 중</span></div>
+                <div><b id="cntPlaying">0</b><span>명 진행 중</span></div>
+                <div><b id="cntFinished">0</b><span>명 탈출</span></div>
+              </div>
+              <div class="room-actions">
+                <button id="roomStart" class="btn btn-gold big-btn" type="button">▶ 시작</button>
+                <button id="roomEnd" class="btn btn-red big-btn" type="button">■ 종료</button>
+              </div>
+              <button id="roomReset" class="btn btn-ghost btn-sm" type="button">↺ 새 판 열기 (다시 대기)</button>
+              <p class="muted tiny">'새 판 열기'를 누르면 다시 대기 상태가 되고, 학생들은 처음 화면에서 다시 들어와야 해요. 이전 판 기록은 순위표에서 빠져요(삭제되지는 않음).</p>
+              <p class="err" id="roomErr"></p>
+            </div>
+            <div class="room-live">
+              <h3 class="sub-h">👥 지금 들어온 학생</h3>
+              <div id="roomList" class="room-list"><p class="muted">아직 아무도 없어요.</p></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 6. 순위표 -->
+        <section class="ed-panel paper" data-panel="board" id="boardSec" hidden>
+          <header class="panel-head row-head"><div><h2>🏆 순위표 관리</h2><p class="muted">기록 = 걸린 시간 + 힌트 1개당 1분 (지금 판만 보여요)</p></div>
+            <div class="ed-actions left"><button id="refreshBoard" class="btn btn-ghost btn-sm" type="button">🔄 새로고침</button><button id="resetBoard" class="btn btn-red btn-sm" type="button">전체 기록 지우기</button></div></header>
+          <div id="boardBox" class="board-wrap"></div>
+        </section>
+      </div>
     </form>
   </main>
   <div id="toasts" class="toasts" aria-live="polite"></div>

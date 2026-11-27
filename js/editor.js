@@ -1,5 +1,5 @@
 // 교사용 편집 모드
-import { STORIES, STORY_IDS } from './game/stories.js';
+import { STORIES, STORY_IDS, getStory, cleanStoryVars } from './game/stories.js';
 import { SPOTS, DIRS, PUZZLE_COUNT, DEMO_CONFIG } from './game/content.js';
 import { validatePuzzles, normalizeDirection, normalizeOX, ANSWER_TYPES, DEFAULT_COOLDOWN, cleanCooldown, cooldownFor } from './game/answer.js';
 import { formatTime } from './game/state.js';
@@ -9,7 +9,8 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const DRAFT_KEY = 'hanok.editor.draft';
 
 const blankPuzzle = () => ({ q: '', image: '', type: 'number', answer: '', hint: '', options: ['', '', '', ''] });
-let cfg = { title: '', story: 'seolhwa', puzzles: Array.from({ length: PUZZLE_COUNT }, blankPuzzle), cooldown: { ...DEFAULT_COOLDOWN } };
+let cfg = { title: '', story: 'seolhwa', storyVars: {}, puzzles: Array.from({ length: PUZZLE_COUNT }, blankPuzzle), cooldown: { ...DEFAULT_COOLDOWN } };
+let activePanel = 'basic', activePz = 0;
 let loaded = null; // { code, password }
 
 async function api(action, body) {
@@ -33,6 +34,7 @@ function toast(msg) {
 }
 
 function saveDraft() {
+  queueMicrotask(refreshNav);
   const put = (c) => localStorage.setItem(DRAFT_KEY, JSON.stringify({ cfg: c, code: loaded?.code || null, at: Date.now() }));
   try { put(cfg); } catch {
     // 그림이 많아 저장 공간이 모자라면 그림만 빼고 저장
@@ -70,7 +72,7 @@ async function compressImage(file) {
 // ---------------- 이야기 ----------------
 function renderStories() {
   $('stories').innerHTML = STORY_IDS.map((id) => {
-    const s = STORIES[id];
+    const s = getStory(id, id === 'teacher' ? cfg.storyVars : undefined);
     return `<button type="button" class="story-card" role="radio" aria-checked="${cfg.story === id}" data-story="${id}">
       <span class="hj">${esc(s.hanja)}</span><h3>${esc(s.name)}</h3><p>${esc(s.synopsis)}</p><div class="tr">보물: ${esc(s.treasure)}</div></button>`;
   }).join('');
@@ -79,10 +81,11 @@ function renderStories() {
     renderStories();
     saveDraft();
   }));
+  $('storyVarsBox').hidden = !STORIES[cfg.story]?.custom;
   renderStoryboard();
 }
 function renderStoryboard() {
-  const s = STORIES[cfg.story];
+  const s = getStory(cfg.story, cfg.storyVars);
   const first = s.intro.split('\n\n').slice(0, 2).join('\n\n');
   const items = [
     { t: '마을 입구 · 장승', d: first },
@@ -109,8 +112,12 @@ function renderPuzzles() {
     return `
     <div class="pz" data-i="${i}">
       <div class="pz-head"><span class="pn">${i + 1}</span><div><b>${esc(SPOTS[i].name)}</b><div class="loc">${esc(SPOTS[i].where)}</div></div>${NOTES[i] ? `<span class="pz-note">${esc(NOTES[i])}</span>` : ''}</div>
+      <div class="pz-cols"><div class="pz-left">
       <label class="lbl">문제</label>
-      <textarea data-f="q" maxlength="1500" placeholder="예: 3 × 4 + 5 의 값은?">${esc(p.q)}</textarea>
+      <div class="q-wrap">
+        <textarea class="q-input" data-f="q" maxlength="1500" rows="5" placeholder="학생에게 보여 줄 문제를 적어 주세요.&#10;예: 3 × 4 + 5 의 값은?">${esc(p.q)}</textarea>
+        <div class="q-foot"><span class="q-tip">Enter 로 줄을 바꿀 수 있어요</span><span class="q-count" data-count>${String(p.q || '').length} / 1500</span></div>
+      </div>
       <label class="lbl">그림 (선택)</label>
       <div class="img-box" data-drop>
         ${p.image ? `<img class="img-prev" src="${esc(p.image)}" alt="" referrerpolicy="no-referrer" onerror="this.alt='그림을 불러오지 못했어요'" />` : '<div class="img-empty">🖼️ 그림 파일을 끌어다 놓거나, 복사한 그림을 이 카드에서 Ctrl+V</div>'}
@@ -121,18 +128,25 @@ function renderPuzzles() {
         </div>
         <p class="err tiny" data-imgerr></p>
       </div>
+      </div><div class="pz-right">
       <label class="lbl">정답 종류</label>
       <div class="type-tog">${Object.entries(ANSWER_TYPES).map(([k, t]) => `<button type="button" data-type="${k}" aria-pressed="${type === k}">${t.icon} ${t.name}</button>`).join('')}</div>
       <label class="lbl">정답</label>
       <div data-answer></div>
       <label class="lbl">힌트 (선택 · 학생이 보면 +1분)</label>
       <input type="text" data-f="hint" maxlength="500" value="${esc(p.hint || '')}" placeholder="예: 곱셈을 먼저 계산해요" />
+      </div></div>
     </div>`;
   }).join('');
   $('puzzles').querySelectorAll('.pz').forEach((el) => {
     const i = +el.dataset.i;
     const p = cfg.puzzles[i];
     el.querySelectorAll('[data-f="q"], [data-f="hint"]').forEach((inp) => inp.addEventListener('input', () => { p[inp.dataset.f] = inp.value; saveDraft(); }));
+    // 문제 칸: 글자 수 · 내용에 맞춰 높이 자동 조절
+    const qa = el.querySelector('.q-input');
+    const fit = () => { qa.style.height = 'auto'; qa.style.height = `${Math.max(150, qa.scrollHeight + 2)}px`; el.querySelector('[data-count]').textContent = `${qa.value.length} / 1500`; };
+    qa.addEventListener('input', fit);
+    requestAnimationFrame(fit);
     el.querySelector('[data-f="imageUrl"]').addEventListener('change', (e) => { p.image = e.target.value.trim(); saveDraft(); renderPuzzles(); });
     const setImage = async (file) => {
       const errEl = el.querySelector('[data-imgerr]');
@@ -159,7 +173,9 @@ function renderPuzzles() {
       renderPuzzles();
     }));
     renderAnswer(el.querySelector('[data-answer]'), i);
+    el.hidden = i !== activePz;
   });
+  refreshNav();
 }
 function renderAnswer(box, i) {
   const p = cfg.puzzles[i];
@@ -223,6 +239,76 @@ function renderAnswer(box, i) {
   render();
 }
 
+// ---------------- 왼쪽 메뉴 · 패널 ----------------
+function setPanel(name, pz) {
+  if (pz != null) activePz = Math.max(0, Math.min(PUZZLE_COUNT - 1, pz));
+  activePanel = name;
+  document.querySelectorAll('[data-panel]').forEach((el) => { el.hidden = el.dataset.panel !== name; });
+  document.querySelectorAll('#puzzles .pz').forEach((el) => { el.hidden = +el.dataset.i !== activePz; });
+  $('pzNow').textContent = activePz + 1;
+  $('pzPrev').disabled = activePz === 0;
+  $('pzNext').disabled = activePz === PUZZLE_COUNT - 1;
+  if (name === 'save') renderChecks();
+  if (name === 'room') refreshRoom(true);
+  if (name === 'board') loadBoard();
+  refreshNav();
+  document.querySelector('.ed-panels')?.scrollTo?.({ top: 0 });
+  window.scrollTo({ top: 0 });
+}
+function puzzleProblems(i) {
+  return validatePuzzles(cfg.puzzles.map((p, k) => (k === i ? p : { q: 'x', type: 'number', answer: '1' })), PUZZLE_COUNT);
+}
+function refreshNav() {
+  if ($('editor').hidden) return;
+  document.querySelectorAll('[data-go]').forEach((b) => b.classList.toggle('on', b.dataset.go === activePanel && !(b.dataset.go === 'puzzles' && false)));
+  $('navPuzzles').innerHTML = cfg.puzzles.map((p, i) => {
+    const errs = puzzleProblems(i);
+    const empty = !String(p.q || '').trim();
+    const st = empty ? 'empty' : errs.length ? 'warn' : 'ok';
+    const t = ANSWER_TYPES[p.type] || ANSWER_TYPES.number;
+    return `<button type="button" class="nav-sub ${activePanel === 'puzzles' && activePz === i ? 'on' : ''}" data-pz="${i}" title="${esc(errs[0] || SPOTS[i].name)}">
+      <span class="pn-s">${i + 1}</span><span class="nm">${esc(SPOTS[i].short)}</span><span class="ty">${t.icon}</span><span class="st ${st}">${st === 'ok' ? '✓' : st === 'warn' ? '!' : ''}</span></button>`;
+  }).join('');
+  $('navPuzzles').querySelectorAll('[data-pz]').forEach((b) => b.addEventListener('click', () => setPanel('puzzles', +b.dataset.pz)));
+  const okCount = cfg.puzzles.filter((_, i) => !puzzleProblems(i).length).length;
+  $('navPzSt').textContent = `${okCount}/7`;
+  $('navPzSt').className = `nav-st ${okCount === 7 ? 'ok' : ''}`;
+  $('navBasicSt').textContent = String($('title').value || '').trim() ? '✓' : '';
+  $('navBasicSt').className = `nav-st ${String($('title').value || '').trim() ? 'ok' : ''}`;
+  $('navSaveSt').textContent = loaded ? loaded.code : '';
+  if (activePanel === 'save') renderChecks();
+}
+function renderChecks() {
+  const errs = collect();
+  $('checkList').innerHTML = errs.length
+    ? `<p class="chk-title">저장하기 전에 확인해 주세요 (${errs.length})</p>${errs.map((e) => {
+      const m = /^(\d)번/.exec(e);
+      return `<button type="button" class="chk-item" ${m ? `data-pz="${+m[1] - 1}"` : 'data-basic'}>⚠️ ${esc(e)} <span>고치러 가기 →</span></button>`;
+    }).join('')}`
+    : '<p class="chk-ok">✅ 모든 칸이 채워졌어요. 왼쪽 아래 <b>저장하기</b>를 눌러 주세요.</p>';
+  $('checkList').querySelectorAll('[data-pz]').forEach((b) => b.addEventListener('click', () => setPanel('puzzles', +b.dataset.pz)));
+  $('checkList').querySelectorAll('[data-basic]').forEach((b) => b.addEventListener('click', () => setPanel('basic')));
+}
+function setSaved(on) {
+  document.querySelectorAll('[data-after-save]').forEach((el) => { el.hidden = !on; });
+}
+$('sideNav').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-go]');
+  if (b) setPanel(b.dataset.go);
+});
+$('pzPrev').addEventListener('click', () => setPanel('puzzles', activePz - 1));
+$('pzNext').addEventListener('click', () => setPanel('puzzles', activePz + 1));
+// 맞춤 이야기 입력
+for (const [id, key] of [['svTeacher', 'teacher'], ['svGift', 'gift'], ['svLetter', 'letter']]) {
+  $(id).addEventListener('input', (e) => {
+    cfg.storyVars = { ...(cfg.storyVars || {}), [key]: e.target.value };
+    saveDraft();
+    renderStoryboard();
+    clearTimeout($(id)._t);
+    $(id)._t = setTimeout(renderStories, 400);
+  });
+}
+
 // ---------------- 오답 대기 시간 ----------------
 function renderCooldown() {
   const cd = cleanCooldown(cfg.cooldown);
@@ -254,14 +340,15 @@ function openEditor() {
   $('pwLoaded').hidden = !loaded;
   $('codeBadge').hidden = !loaded;
   if (loaded) $('codeBadge').textContent = loaded.code;
-  $('boardSec').hidden = !loaded;
-  $('roomSec').hidden = !loaded;
-  $('goRoom').hidden = !loaded;
+  setSaved(!!loaded);
+  cfg.storyVars = cleanStoryVars(cfg.storyVars);
+  $('svTeacher').value = cfg.storyVars.teacher; $('svGift').value = cfg.storyVars.gift; $('svLetter').value = cfg.storyVars.letter;
+  activePz = 0;
   renderStories();
   renderPuzzles();
   renderCooldown();
-  if (loaded) { showResult(loaded.code); loadBoard(); startRoomWatch(); }
-  window.scrollTo(0, 0);
+  if (loaded) { showResult(loaded.code); startRoomWatch(); }
+  setPanel(loaded ? 'room' : 'basic');
 }
 
 function showResult(code) {
@@ -290,11 +377,10 @@ $('loadForm').addEventListener('submit', async (e) => {
   if (!code || !password) { $('loadErr').textContent = '코드와 비밀번호를 입력해 주세요.'; return; }
   try {
     const c = await api('load', { code, password });
-    cfg = { title: c.title, story: c.story, puzzles: c.puzzles.map((p) => ({ image: '', hint: '', options: ['', '', '', ''], ...p })), cooldown: cleanCooldown(c.cooldown) };
+    cfg = { title: c.title, story: c.story, storyVars: c.storyVars || {}, puzzles: c.puzzles.map((p) => ({ image: '', hint: '', options: ['', '', '', ''], ...p })), cooldown: cleanCooldown(c.cooldown) };
     loaded = { code: c.code, password };
     openEditor();
     toast(`${c.code} 구성을 불러왔어요.`);
-    setTimeout(() => $('roomSec').scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
   } catch (err) { $('loadErr').textContent = err.message; }
 });
 
@@ -310,9 +396,9 @@ function collect() {
 
 $('previewBtn').addEventListener('click', () => {
   const errs = collect();
-  if (errs.length) { $('saveErr').textContent = `미리 해보기 전에 고쳐 주세요:\n${errs.join('\n')}`; return; }
+  if (errs.length) { $('saveErr').textContent = `미리 해보기 전에 고칠 곳이 ${errs.length}개 있어요.`; setPanel('save'); return; }
   $('saveErr').textContent = '';
-  const data = JSON.stringify({ code: 'PREVIEW', title: cfg.title, story: cfg.story, puzzles: cfg.puzzles, cooldown: cleanCooldown(cfg.cooldown) });
+  const data = JSON.stringify({ code: 'PREVIEW', title: cfg.title, story: cfg.story, storyVars: cleanStoryVars(cfg.storyVars), puzzles: cfg.puzzles, cooldown: cleanCooldown(cfg.cooldown) });
   try { sessionStorage.setItem('hanok.preview', data); } catch { /* 무시 */ }
   try { localStorage.setItem('hanok.preview', data); } catch { /* 그림이 커서 못 담으면 sessionStorage 사용 */ }
   window.open('./?preview=1', '_blank');
@@ -322,7 +408,7 @@ $('editor').addEventListener('submit', async (e) => {
   e.preventDefault();
   const errs = collect();
   $('saveErr').textContent = '';
-  if (errs.length) { $('saveErr').textContent = errs.join('\n'); return; }
+  if (errs.length) { $('saveErr').textContent = `고칠 곳이 ${errs.length}개 있어요.`; setPanel('save'); return; }
   if (JSON.stringify(cfg).length > 4_000_000) { $('saveErr').textContent = '그림을 합친 크기가 너무 커요. 그림 몇 개를 더 작은 것으로 바꿔 주세요.'; return; }
   const btn = $('saveBtn');
   btn.disabled = true; btn.textContent = '저장하는 중… (그림이 있으면 조금 걸려요)';
@@ -345,16 +431,14 @@ $('editor').addEventListener('submit', async (e) => {
       } catch { /* 무시 */ }
       $('pwNew').hidden = true; $('pwLoaded').hidden = false;
       $('codeBadge').hidden = false; $('codeBadge').textContent = r.code;
-      $('boardSec').hidden = false;
-      $('roomSec').hidden = false;
-      $('goRoom').hidden = false;
+      setSaved(true);
       toast(`구성 코드 ${r.code} 가 만들어졌어요!`);
       loadBoard();
       startRoomWatch();
     }
     saveDraft();
     showResult(loaded.code);
-    $('result').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setPanel('save');
   } catch (err) {
     $('saveErr').textContent = err.message;
   } finally {
@@ -410,6 +494,7 @@ function renderRoom() {
   $('roomStart').disabled = st === 'playing';
   $('roomStart').textContent = st === 'ended' ? '▶ 다시 진행' : '▶ 시작';
   $('roomEnd').disabled = st !== 'playing';
+  $('navRoomSt').textContent = st === 'waiting' ? `대기 ${room.counts.online}` : st === 'playing' ? `진행 ${room.counts.playing}` : '종료';
   updateClock();
 }
 function updateClock() {
@@ -419,14 +504,29 @@ function updateClock() {
     : room.status === 'ended' && room.startedAt && room.endedAt ? room.endedAt - room.startedAt : null;
   $('roomClock').textContent = t == null ? '' : t < 0 ? `🚦 ${Math.ceil(-t / 1000)}초 뒤 출발` : `⏱ ${formatTime(t)}`;
 }
-async function refreshRoom() {
+async function refreshRoom(force) {
   if (!loaded) return;
   try {
-    room = await api('room', loaded);
+    const showList = activePanel === 'room';
+    const [r, sc] = await Promise.all([api('room', loaded), showList || force ? api('scores', loaded) : null]);
+    room = r;
     room._fetched = Date.now();
     $('roomErr').textContent = '';
     renderRoom();
+    if (sc) renderRoomList(sc.entries);
   } catch (e) { $('roomErr').textContent = e.message; }
+}
+function renderRoomList(entries) {
+  const box = $('roomList');
+  if (!entries.length) { box.innerHTML = '<p class="muted">아직 아무도 없어요. 학생들에게 코드를 알려 주세요.</p>'; return; }
+  const order = (e) => (e.finishedAt ? 0 : e.online ? 1 : 2);
+  const list = [...entries].sort((a, b) => order(a) - order(b) || (b.solved - a.solved));
+  box.innerHTML = list.map((e) => {
+    const st = e.finishedAt ? `<em class="tag done">탈출 ${formatTime(e.elapsedMs)}</em>`
+      : room?.status === 'waiting' ? `<em class="tag wait">대기</em>`
+        : `<em class="tag play">${e.solved}/7</em>`;
+    return `<div class="rl-item ${e.online || e.finishedAt ? '' : 'off'}"><span class="dot-on"></span><b>${esc(e.nickname)}</b>${st}${e.wrong ? `<span class="muted tiny">오답 ${e.wrong}</span>` : ''}</div>`;
+  }).join('');
 }
 function startRoomWatch() {
   clearInterval(roomTimer); clearInterval(clockTimer);
@@ -449,7 +549,6 @@ $('roomStart').addEventListener('click', () => roomAction('roomStart', room?.sta
 $('roomEnd').addEventListener('click', () => roomAction('roomEnd', '게임을 종료할까요? 아직 탈출하지 못한 학생은 더 이상 문제를 풀 수 없어요.'));
 $('roomReset').addEventListener('click', () => roomAction('roomReset', '새 판을 열까요? 지금 판은 끝나고, 학생들은 처음 화면에서 다시 들어와야 해요.'));
 
-$('goRoom').addEventListener('click', () => $('roomSec').scrollIntoView({ behavior: 'smooth', block: 'start' }));
 
 // 작성 중 초안 안내
 try {

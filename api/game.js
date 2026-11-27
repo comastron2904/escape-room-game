@@ -3,6 +3,7 @@
 // 시간은 "교사가 시작을 누른 시각"(늦게 들어온 학생은 들어온 시각)부터 서버가 잽니다.
 import { handler, rest, getOne, enc, HttpError, cleanCode, cleanName, isUuid, roomStatus } from './_lib.js';
 import { checkAnswer, publicPuzzle, normalizeDirection, cleanCooldown, registerWrong, lockedFor } from '../js/game/answer.js';
+import { cleanStoryVars } from '../js/game/stories.js';
 
 const HINT_PENALTY_MS = 60_000;
 const HINT_KEY = /^(intro|p\d|final|treasure):\d$|^p\d:t$/;
@@ -64,7 +65,7 @@ export default handler({
 
   async config({ code }) {
     const c = await loadConfig(code);
-    return { code: c.code, title: c.title, story: c.story, puzzles: (c.puzzles || []).map(publicPuzzle), cooldown: cleanCooldown(c.cooldown), status: statusOf(c) };
+    return { code: c.code, title: c.title, story: c.story, storyVars: cleanStoryVars(c.story_vars), puzzles: (c.puzzles || []).map(publicPuzzle), cooldown: cleanCooldown(c.cooldown), status: statusOf(c) };
   },
 
   // 대기실 입장 (방이 진행 중이면 바로 시작)

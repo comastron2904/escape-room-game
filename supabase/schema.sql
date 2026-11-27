@@ -32,6 +32,7 @@ create table if not exists public.sessions (
   score_ms    bigint
 );
 -- 예전에 만든 테이블에 새 칸 추가 (이미 있으면 건너뜀)
+alter table public.configs add column if not exists story_vars jsonb not null default '{}'; -- 맞춤 이야기(선생님 이름·선물·편지)
 alter table public.configs add column if not exists cooldown jsonb not null default '{"first":3,"step":3,"max":30}';
 alter table public.sessions add column if not exists penalties jsonb not null default '{}';
 -- 대기실 (교사가 시작·종료). 교사가 '시작'을 누르기 전에는 항상 대기

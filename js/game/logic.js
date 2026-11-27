@@ -114,7 +114,7 @@ export function createGame({ state, ui, world, save, backend, config, story }) {
     if (id in SPOT_INDEX) return openPuzzle(SPOT_INDEX[id]);
 
     switch (id) {
-      case 'jangseung': return storyText('intro', `${story.name}의 전설`, story.intro, '마을 입구 · 장승', '🪵');
+      case 'jangseung': return storyText('intro', (story.legend || `${story.name}의 전설`), story.intro, '마을 입구 · 장승', '🪵');
       case 'stele': return storyText('stele', '석단 옆 비석', story.stele, '중앙 마당', '🪨');
       case 'letter': return storyText('letter', '서안 위의 종이', story.letter, '서당', '📜');
       case 'scroll_seodang': return ui.text({ title: '족자', text: story.scroll3d.seodang.join('\n'), icon: '📜' });

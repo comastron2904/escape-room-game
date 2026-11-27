@@ -51,7 +51,7 @@ export function createLocalBackend(fullConfig, { persist = true } = {}) {
   if (!db0.finalSeq) { db0.finalSeq = randomFinalSeq(fullConfig.puzzles.length); store(db0); }
   const seq = () => load().finalSeq;
   const cd = cleanCooldown(fullConfig.cooldown);
-  const pub = () => ({ code: fullConfig.code, title: fullConfig.title, story: fullConfig.story, puzzles: fullConfig.puzzles.map(publicPuzzle), cooldown: cd, local: true });
+  const pub = () => ({ code: fullConfig.code, title: fullConfig.title, story: fullConfig.story, puzzles: fullConfig.puzzles.map(publicPuzzle), cooldown: cd, storyVars: fullConfig.storyVars || {}, local: true });
   const sess = (id) => {
     const s = load().sessions[id];
     if (!s) throw new ApiError('기록을 찾지 못했어요. 처음부터 다시 시작해 주세요.', 404);

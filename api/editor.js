@@ -3,19 +3,19 @@
 import { randomInt, randomBytes } from 'node:crypto';
 import { handler, rest, getOne, enc, HttpError, cleanCode, hashPassword, verifyPassword, newCode, isUuid, uploadImage, roomStatus } from './_lib.js';
 import { validatePuzzles, cleanPuzzle, cleanCooldown } from '../js/game/answer.js';
+import { STORY_IDS, cleanStoryVars } from '../js/game/stories.js';
 
-const STORIES = ['seolhwa', 'hong', 'kimsatgat'];
 const COUNT = 7;
 const START_DELAY_MS = Number(process.env.ROOM_START_DELAY_MS ?? 5000); // 출발 전 카운트다운 (기본 5초)
 
-function cleanConfig({ title, story, puzzles, cooldown }) {
+function cleanConfig({ title, story, puzzles, cooldown, storyVars }) {
   const t = String(title || '').trim().slice(0, 40);
   if (!t) throw new HttpError(400, '게임 제목을 입력해 주세요.');
-  if (!STORIES.includes(story)) throw new HttpError(400, '이야기를 골라 주세요.');
+  if (!STORY_IDS.includes(story)) throw new HttpError(400, '이야기를 골라 주세요.');
   const errs = validatePuzzles(puzzles, COUNT);
   if (errs.length) throw new HttpError(400, errs.join('\n'));
   const ps = puzzles.map(cleanPuzzle);
-  return { title: t, story, puzzles: ps, cooldown: cleanCooldown(cooldown) };
+  return { title: t, story, puzzles: ps, cooldown: cleanCooldown(cooldown), story_vars: cleanStoryVars(storyVars) };
 }
 
 async function auth(code, password) {
@@ -37,7 +37,7 @@ async function storeImages(code, puzzles) {
   }
   return puzzles;
 }
-const publicFull = (c) => ({ code: c.code, title: c.title, story: c.story, puzzles: c.puzzles, cooldown: cleanCooldown(c.cooldown), updatedAt: c.updated_at });
+const publicFull = (c) => ({ code: c.code, title: c.title, story: c.story, storyVars: cleanStoryVars(c.story_vars), puzzles: c.puzzles, cooldown: cleanCooldown(c.cooldown), updatedAt: c.updated_at });
 
 export default handler({
   async create(body) {
