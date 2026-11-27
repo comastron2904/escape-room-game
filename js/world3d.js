@@ -10,8 +10,8 @@ import { loadCharacterLibrary, instantiateCharacter, createCharacterPreview, pre
 import { createNavGrid } from './3d/pathfind.js';
 import { bakeStatic } from './3d/bake.js';
 import { createMaterials } from './3d/hanok.js';
-import { softShadowTexture, setMaxAnisotropy, canvasTexture, snowflakeTexture, markerTexture, MARKER_STYLE } from './3d/textures.js';
-import { buildAreas, CABINET_PUZZLE_DRAWER } from './areas.js';
+import { softShadowTexture, setMaxAnisotropy, canvasTexture, snowflakeTexture, rainTexture, leafTexture, glowTexture, markerTexture, MARKER_STYLE } from './3d/textures.js';
+import { buildAreas, CABINET_PUZZLE_DRAWER, THEME_SEASON } from './areas.js';
 
 const WALK_SPEED = 2.4;
 const RUN_SPEED = 4.8;
@@ -145,11 +145,12 @@ export async function createWorld(canvas, options) {
   key.shadow.normalBias = 0.04;
   scene.add(key, key.target);
   const keyOffset = new THREE.Vector3(-9, 18, 11);
+  const KEY_DEFAULT = keyOffset.clone();
   const lamp = new THREE.PointLight(0xffb060, 0, 8, 1.6); // 등잔불 / 보물빛 (조명 1개만 재사용)
   scene.add(lamp);
 
   // ---------------- 마을 · 실내 만들기 ----------------
-  const M = createMaterials();
+  const M = createMaterials(THEME_SEASON[options.story?.id] || 'winter');
   const areas = {};
   const mk = (def) => (areas[def.id] = new Area(scene, def));
   const built = buildAreas({ mk, M, options, story: options.story });
@@ -175,43 +176,88 @@ export async function createWorld(canvas, options) {
     for (const f of a.fadeables) f.box = new THREE.Box3().setFromObject(f.item.group);
   }
 
-  // 눈 내림 (마을에서만) — 위치 계산을 GPU 셰이더에서 해서 CPU 부담 없음
-  const SNOW_N = isTouch ? 1000 : 2200;
-  const SNOW_BOX = { w: 36, h: 16, d: 36 };
-  const snowPos = new Float32Array(SNOW_N * 3);
-  const snowSpd = new Float32Array(SNOW_N);
-  for (let i = 0; i < SNOW_N; i++) {
-    snowPos[i * 3] = Math.random() * SNOW_BOX.w;
-    snowPos[i * 3 + 1] = Math.random() * SNOW_BOX.h;
-    snowPos[i * 3 + 2] = Math.random() * SNOW_BOX.d;
-    snowSpd[i] = 0.6 + Math.random() * 0.9;
-  }
-  const snowGeo = new THREE.BufferGeometry();
-  snowGeo.setAttribute('position', new THREE.BufferAttribute(snowPos, 3));
-  snowGeo.setAttribute('aSpeed', new THREE.BufferAttribute(snowSpd, 1));
-  const snowMat = new THREE.PointsMaterial({ map: snowflakeTexture(), size: 0.16, transparent: true, depthWrite: false, opacity: 0.95, sizeAttenuation: true });
-  const snowU = { uTime: { value: 0 }, uCam: { value: new THREE.Vector3() }, uBox: { value: new THREE.Vector3(SNOW_BOX.w, SNOW_BOX.h, SNOW_BOX.d) } };
-  snowMat.onBeforeCompile = (sh) => {
-    Object.assign(sh.uniforms, snowU);
-    sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform vec3 uCam;\nuniform vec3 uBox;\nattribute float aSpeed;')
-      .replace('#include <begin_vertex>', `
-        vec3 transformed = position;
-        transformed.y = mod(position.y - uTime * aSpeed, uBox.y);
-        float sway = sin(uTime * 0.7 + position.x * 3.1) * 0.35;
-        // 카메라 주변 상자 안에서 월드 좌표 기준으로 반복 (걸어도 눈이 따라오지 않음)
-        transformed.x = mod(position.x + sway - uCam.x + uBox.x * 0.5, uBox.x) - uBox.x * 0.5 + uCam.x;
-        transformed.z = mod(position.z - uCam.z + uBox.z * 0.5, uBox.z) - uBox.z * 0.5 + uCam.z;`);
+  // 날씨 (눈 · 비 · 낙엽 · 반딧불) — 위치 계산을 GPU 셰이더에서 해서 CPU 부담 없음
+  const WEATHER = {
+    snow: { n: isTouch ? 1100 : 2400, tex: snowflakeTexture, size: 0.16, sp: [0.6, 1.5], sway: 0.35, opacity: 0.95, box: [36, 16, 36] },
+    rain: { n: isTouch ? 1400 : 3000, tex: rainTexture, size: 0.55, sp: [12, 16], sway: 0, slant: 0.22, opacity: 0.5, box: [34, 16, 34] },
+    leaves: { n: isTouch ? 160 : 300, tex: leafTexture, size: 0.3, sp: [0.45, 0.95], sway: 1.3, opacity: 1, box: [36, 12, 36], colors: [0xc8401c, 0xe0701e, 0xe8a82a, 0xa8281c, 0xd88a2a] },
+    fireflies: { n: 110, tex: () => glowTexture('220,255,140'), size: 0.3, sp: [-0.25, 0.25], sway: 0.9, opacity: 1, box: [34, 3.2, 34], additive: true, color: 0xd8ff8a },
   };
-  const snowPts = new THREE.Points(snowGeo, snowMat);
-  snowPts.frustumCulled = false;
-  snowPts.renderOrder = 6;
-  scene.add(snowPts);
+  const weatherKind = areas.village?.env.weather;
+  const W = WEATHER[weatherKind] || null;
+  const snowU = { uTime: { value: 0 }, uCam: { value: new THREE.Vector3() }, uBox: { value: new THREE.Vector3(36, 16, 36) }, uSway: { value: 0.35 }, uSlant: { value: 0 } };
+  let snowPts = null;
+  if (W) {
+    const N = W.n;
+    const pos = new Float32Array(N * 3), spd = new Float32Array(N);
+    const col = W.colors ? new Float32Array(N * 3) : null;
+    const tc = new THREE.Color();
+    for (let i = 0; i < N; i++) {
+      pos[i * 3] = Math.random() * W.box[0];
+      pos[i * 3 + 1] = Math.random() * W.box[1];
+      pos[i * 3 + 2] = Math.random() * W.box[2];
+      spd[i] = W.sp[0] + Math.random() * (W.sp[1] - W.sp[0]);
+      if (col) { tc.setHex(W.colors[i % W.colors.length]); col[i * 3] = tc.r; col[i * 3 + 1] = tc.g; col[i * 3 + 2] = tc.b; }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('aSpeed', new THREE.BufferAttribute(spd, 1));
+    if (col) geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    const rate = Math.max(0.1, Math.min(1.5, areas.village.env.weatherRate ?? 1));
+    geo.setDrawRange(0, Math.min(N, Math.round(N * Math.min(1, rate))));
+    const mat = new THREE.PointsMaterial({
+      map: W.tex(), size: W.size * (rate > 1 ? 1.1 : 1), transparent: true, depthWrite: false, opacity: W.opacity, sizeAttenuation: true,
+      vertexColors: !!col, color: W.color ?? 0xffffff, blending: W.additive ? THREE.AdditiveBlending : THREE.NormalBlending, alphaTest: col ? 0.4 : 0,
+    });
+    snowU.uBox.value.set(...W.box);
+    snowU.uSway.value = W.sway;
+    snowU.uSlant.value = W.slant || 0;
+    mat.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, snowU);
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform vec3 uCam;\nuniform vec3 uBox;\nuniform float uSway;\nuniform float uSlant;\nattribute float aSpeed;')
+        .replace('#include <begin_vertex>', `
+          vec3 transformed = position;
+          transformed.y = mod(position.y - uTime * aSpeed, uBox.y);
+          float sway = sin(uTime * 0.7 + position.x * 3.1 + position.z) * uSway;
+          float swz = cos(uTime * 0.53 + position.z * 2.3) * uSway * 0.6;
+          float drift = -uTime * aSpeed * uSlant;
+          // 카메라 주변 상자 안에서 월드 좌표 기준으로 반복 (걸어도 따라오지 않음)
+          transformed.x = mod(position.x + sway + drift - uCam.x + uBox.x * 0.5, uBox.x) - uBox.x * 0.5 + uCam.x;
+          transformed.z = mod(position.z + swz - uCam.z + uBox.z * 0.5, uBox.z) - uBox.z * 0.5 + uCam.z;`);
+    };
+    snowPts = new THREE.Points(geo, mat);
+    snowPts.frustumCulled = false;
+    snowPts.renderOrder = 6;
+    scene.add(snowPts);
+  }
   function updateSnow(dt, t) {
-    snowPts.visible = !!area.env.snow;
+    if (!snowPts) return;
+    snowPts.visible = !!area.env.weather;
     if (!snowPts.visible) return;
     snowU.uTime.value = t;
     snowU.uCam.value.set(camTarget.x, 0, camTarget.z);
+  }
+
+  // 하늘 느낌 (화면 위쪽 2D 층: 달 · 노을 · 먹구름) + 번개 섬광
+  const skyEl = document.getElementById('skyfx');
+  const flashEl = document.getElementById('flashfx');
+  let flash = 0, boltT = 5 + Math.random() * 5;
+  function lightning(strong = true) {
+    flash = strong ? 1 : 0.55;
+    const delay = strong ? 120 + Math.random() * 300 : 600 + Math.random() * 900;
+    setTimeout(() => options.sfx?.(strong ? 'thunder' : 'thunderFar'), delay);
+  }
+  function updateLightning(dt, t) {
+    const e = area.env;
+    if (e.lightning && !paused) {
+      boltT -= dt;
+      if (boltT <= 0) { boltT = 8 + Math.random() * 10; lightning(Math.random() < 0.55); }
+    }
+    if (flash > 0) flash = Math.max(0, flash - dt * 2.2);
+    const f = flash > 0 ? flash * (0.55 + 0.45 * Math.abs(Math.sin(t * 47))) : 0;
+    hemi.intensity = e.hemi[2] + f * 2.6;
+    if (flashEl) flashEl.style.opacity = (f * 0.55).toFixed(3);
   }
 
   // 조사 표시: 머리 위 핀(화면에서 항상 같은 크기) + 문제 장소 바닥 고리
@@ -311,6 +357,9 @@ export async function createWorld(canvas, options) {
     scene.fog.far = e.fog[2];
     hemi.color.set(e.hemi[0]); hemi.groundColor.set(e.hemi[1]); hemi.intensity = e.hemi[2];
     key.color.set(e.key[0]); key.intensity = e.key[1];
+    if (e.keyDir) keyOffset.set(...e.keyDir); else keyOffset.copy(KEY_DEFAULT);
+    if (skyEl) skyEl.dataset.sky = e.skyfx || '';
+    if (flashEl) flashEl.style.opacity = '0';
     renderer.toneMappingExposure = e.exposure ?? 1;
     scene.environmentIntensity = e.envI ?? 0.25;
     bloom.strength = e.bloom ?? 0.3;
@@ -552,7 +601,8 @@ export async function createWorld(canvas, options) {
   const SOLVED_POSE = {
     well: () => {},
     snowman: () => {},
-    pavilion: (k) => { B.lockbox.lid.rotation.x = -k * 1.3; },
+    pavilion: () => {},
+    ...B.spotPose,
     bandaji: (k) => { B.bandaji.lid.rotation.x = -k * 1.25; },
     screen: (k) => { B.screen.group.position.x = B.screen.group.userData.x0 - k * 1.6; B.secretDrawer.visible = k > 0.5; },
     cabinet: (k) => { const d = B.cabinet.drawers[CABINET_PUZZLE_DRAWER]; d.mesh.position.z = d.mesh.userData.z0 + k * 0.3; },
@@ -561,24 +611,20 @@ export async function createWorld(canvas, options) {
   async function fx(name, arg) {
     if (name.startsWith('solve_')) {
       const id = name.slice(6);
-      if (id === 'well') {
-        const b = B.well.bucket, rope = B.well.rope;
-        options.sfx?.('bucket');
-        await tween(0.9, (k) => { b.position.y = 0.85 - Math.sin(k * Math.PI) * 0.6; rope.scale.y = 1 + Math.sin(k * Math.PI) * 0.7; rope.position.y = 1.25 - Math.sin(k * Math.PI) * 0.3; });
-        return;
-      }
-      if (id === 'snowman') {
-        const g = B.snowman.group;
-        await tween(0.8, (k) => { g.rotation.z = Math.sin(k * Math.PI * 6) * 0.06 * (1 - k); });
+      if (B.spotFx[id]) {
+        await B.spotFx[id](tween, options.sfx);
+        SOLVED_POSE[id]?.(1);
+        renderer.shadowMap.needsUpdate = true;
         return;
       }
       const pose = SOLVED_POSE[id];
       if (pose) await tween(id === 'screen' ? 1.1 : 0.7, pose);
+      renderer.shadowMap.needsUpdate = true;
       return;
     }
     switch (name) {
       case 'altarPress': {
-        const s = B.altar.sockets[arg];
+        const s = B.final.sockets[arg];
         if (s) tween(0.6, (k) => { s.glow.material.opacity = Math.sin(k * Math.PI) * 0.9; });
         break;
       }
@@ -590,10 +636,10 @@ export async function createWorld(canvas, options) {
       case 'openChest': {
         shake = 0.3;
         lamp.intensity = 6;
-        await tween(1.2, (k) => {
-          B.chest.lid.rotation.x = -k * 1.9;
-          B.chest.glow.material.opacity = 0.5 + k * 0.5;
-          lamp.intensity = 6 + k * 18;
+        const base = area.env.lamp?.intensity ?? 6;
+        await tween(1.4, (k) => {
+          B.treasure.open(k);
+          lamp.intensity = base + k * 16;
         });
         B.sparkles.visible = true;
         break;
@@ -603,20 +649,18 @@ export async function createWorld(canvas, options) {
   }
 
   async function openStairs(animate) {
-    const slab = B.altar.slab;
+    const F = B.final;
     B.stairwell.group.visible = true;
-    for (const s of Object.values(B.altar.sockets)) s.glow.material.opacity = 0.7;
+    for (const so of Object.values(F.sockets)) so.glow.material.opacity = 0.7;
     if (!animate) {
-      slab.position.set(2.25, 0.28, 0);
-      slab.rotation.z = -0.12;
+      F.open(1);
       renderer.shadowMap.needsUpdate = true;
       return;
     }
+    if (F.flash) lightning(true);
     shake = 1.2;
-    await tween(2.0, (k) => {
-      slab.position.x = k * 2.25;
-      slab.position.y = 0.42 - k * 0.14;
-      slab.rotation.z = -k * 0.12;
+    await tween(F.dur || 2.0, (k) => {
+      F.open(k);
       shake = Math.max(shake, (1 - k) * 0.6);
     }, (k) => k * k * (3 - 2 * k));
     renderer.shadowMap.needsUpdate = true;
@@ -625,7 +669,7 @@ export async function createWorld(canvas, options) {
   const SPOT_IDS = ['well', 'snowman', 'pavilion', 'bandaji', 'screen', 'cabinet', 'najeon'];
   function applyState(s) {
     for (const i of s.solved || []) SOLVED_POSE[SPOT_IDS[i]]?.(1);
-    if (s.finished) { B.chest.lid.rotation.x = -1.9; B.chest.glow.material.opacity = 1; B.sparkles.visible = true; }
+    if (s.finished) { B.treasure.open(1); B.sparkles.visible = true; }
     if (s.flags?.stairs_open) openStairs(false);
   }
 
@@ -738,6 +782,7 @@ export async function createWorld(canvas, options) {
     }
     B.update?.(dt, time, area.id);
     updateSnow(dt, time);
+    updateLightning(dt, time);
     if (area.env.followLamp) area.toWorld(player.x, player.z, 1.4, lamp.position);
 
     // 캐릭터
@@ -806,7 +851,7 @@ export async function createWorld(canvas, options) {
     const all = Object.values(areas);
     const fadeMats = all.flatMap((a) => a.fadeables.flatMap((f) => f.mats));
     all.forEach((a) => { a.root.visible = true; });
-    snowPts.visible = true;
+    if (snowPts) snowPts.visible = true;
     try {
       renderer.compile(scene, camera);
       fadeMats.forEach((m) => { m.transparent = true; m.needsUpdate = true; });
@@ -907,7 +952,7 @@ export async function createWorld(canvas, options) {
       if (!preview) preview = createCharacterPreview(charLib);
       return preview;
     },
-    destroy() { cancelAnimationFrame(raf); tag.remove(); renderer.dispose(); },
+    destroy() { cancelAnimationFrame(raf); tag.remove(); renderer.dispose(); if (skyEl) skyEl.dataset.sky = ''; },
   };
   if (new URLSearchParams(location.search).has('debug')) {
     window.__hanok = { areas, player, api, teleport(x, z) { player.x = x; player.z = z; }, scene, camera };

@@ -1,6 +1,6 @@
 // 교사용 편집 모드
 import { STORIES, STORY_IDS, getStory, cleanStoryVars } from './game/stories.js';
-import { SPOTS, DIRS, PUZZLE_COUNT, DEMO_CONFIG } from './game/content.js';
+import { getSpots, getTheme, DIRS, PUZZLE_COUNT, DEMO_CONFIG } from './game/content.js';
 import { validatePuzzles, normalizeDirection, normalizeOX, ANSWER_TYPES, DEFAULT_COOLDOWN, cleanCooldown, cooldownFor } from './game/answer.js';
 import { formatTime } from './game/state.js';
 
@@ -11,6 +11,7 @@ const DRAFT_KEY = 'hanok.editor.draft';
 const blankPuzzle = () => ({ q: '', image: '', type: 'number', answer: '', hint: '', options: ['', '', '', ''] });
 let cfg = { title: '', story: 'seolhwa', storyVars: {}, puzzles: Array.from({ length: PUZZLE_COUNT }, blankPuzzle), cooldown: { ...DEFAULT_COOLDOWN } };
 let activePanel = 'basic', activePz = 0;
+const spots = () => getSpots(cfg.story);
 let loaded = null; // { code, password }
 
 async function api(action, body) {
@@ -73,12 +74,16 @@ async function compressImage(file) {
 function renderStories() {
   $('stories').innerHTML = STORY_IDS.map((id) => {
     const s = getStory(id, id === 'teacher' ? cfg.storyVars : undefined);
+    const th = getTheme(id);
     return `<button type="button" class="story-card" role="radio" aria-checked="${cfg.story === id}" data-story="${id}">
-      <span class="hj">${esc(s.hanja)}</span><h3>${esc(s.name)}</h3><p>${esc(s.synopsis)}</p><div class="tr">보물: ${esc(s.treasure)}</div></button>`;
+      <span class="hj">${esc(s.hanja)}</span><h3>${esc(s.name)}</h3><div class="mood">${th.moodIcon} ${esc(th.mood)}</div><p>${esc(s.synopsis)}</p><div class="tr">보물: ${esc(s.treasure)}</div></button>`;
   }).join('');
   $('stories').querySelectorAll('[data-story]').forEach((b) => b.addEventListener('click', () => {
+    if (cfg.story === b.dataset.story) return;
     cfg.story = b.dataset.story;
     renderStories();
+    renderPuzzles();
+    setPanel(activePanel);
     saveDraft();
   }));
   $('storyVarsBox').hidden = !STORIES[cfg.story]?.custom;
@@ -86,18 +91,20 @@ function renderStories() {
 }
 function renderStoryboard() {
   const s = getStory(cfg.story, cfg.storyVars);
+  const th = getTheme(cfg.story);
   const first = s.intro.split('\n\n').slice(0, 2).join('\n\n');
   const items = [
+    { t: `${th.moodIcon} 맵 · ${th.mood}`, d: `${th.weather}\n${th.layout}`, map: true },
     { t: '마을 입구 · 장승', d: first },
-    ...SPOTS.map((sp, i) => ({
+    ...spots().map((sp, i) => ({
       t: `${sp.name} — ${i + 1}번 문제`,
       d: s.spots[i] + (sp.reward ? `\n→ 풀면 ${sp.reward === 'key' ? '놋쇠 열쇠(대감댁 문)' : '등잔(어두운 별당)'}도 얻어요.` : ''),
       tag: `선생님 문제 ${i + 1} → ${s.fragment} 〔${'一二三四五六七'[i]}〕`,
     })),
-    { t: '중앙 마당 · 방위 석단 — 8번 퍼즐', d: s.stele, tag: '일곱 조각으로 푸는 마지막 퍼즐', final: true },
-    { t: '지하 보물창고', d: s.finalLetter },
+    { t: `${th.final.name} — 8번 퍼즐`, d: `${s.stele}\n\n→ 다 밟으면: ${th.final.openText.split('\n')[0]}`, tag: '일곱 조각으로 푸는 마지막 퍼즐', final: true },
+    { t: th.final.vault, d: s.finalLetter },
   ];
-  $('storyboard').innerHTML = items.map((it) => `<li><b>${esc(it.t)}</b><span>${esc(it.d)}</span>${it.tag ? `<em class="tag ${it.final ? 'final' : ''}">${esc(it.tag)}</em>` : ''}</li>`).join('');
+  $('storyboard').innerHTML = items.map((it) => `<li><b>${esc(it.t)}</b><span>${esc(it.d)}</span>${it.tag ? `<em class="tag ${it.final ? 'final' : ''}">${esc(it.tag)}</em>` : ''}</li>`.replace('<li>', it.map ? '<li class="map">' : '<li>')).join('');
 }
 
 // ---------------- 문제 ----------------
@@ -111,7 +118,7 @@ function renderPuzzles() {
     const type = ANSWER_TYPES[p.type] ? p.type : 'number';
     return `
     <div class="pz" data-i="${i}">
-      <div class="pz-head"><span class="pn">${i + 1}</span><div><b>${esc(SPOTS[i].name)}</b><div class="loc">${esc(SPOTS[i].where)}</div></div>${NOTES[i] ? `<span class="pz-note">${esc(NOTES[i])}</span>` : ''}</div>
+      <div class="pz-head"><span class="pn">${i + 1}</span><div><b>${esc(spots()[i].name)}</b><div class="loc">${esc(spots()[i].where)}</div></div>${NOTES[i] ? `<span class="pz-note">${esc(NOTES[i])}</span>` : ''}</div>
       <div class="pz-cols"><div class="pz-left">
       <label class="lbl">문제</label>
       <div class="q-wrap">
@@ -266,8 +273,8 @@ function refreshNav() {
     const empty = !String(p.q || '').trim();
     const st = empty ? 'empty' : errs.length ? 'warn' : 'ok';
     const t = ANSWER_TYPES[p.type] || ANSWER_TYPES.number;
-    return `<button type="button" class="nav-sub ${activePanel === 'puzzles' && activePz === i ? 'on' : ''}" data-pz="${i}" title="${esc(errs[0] || SPOTS[i].name)}">
-      <span class="pn-s">${i + 1}</span><span class="nm">${esc(SPOTS[i].short)}</span><span class="ty">${t.icon}</span><span class="st ${st}">${st === 'ok' ? '✓' : st === 'warn' ? '!' : ''}</span></button>`;
+    return `<button type="button" class="nav-sub ${activePanel === 'puzzles' && activePz === i ? 'on' : ''}" data-pz="${i}" title="${esc(errs[0] || spots()[i].name)}">
+      <span class="pn-s">${i + 1}</span><span class="nm">${esc(spots()[i].short)}</span><span class="ty">${t.icon}</span><span class="st ${st}">${st === 'ok' ? '✓' : st === 'warn' ? '!' : ''}</span></button>`;
   }).join('');
   $('navPuzzles').querySelectorAll('[data-pz]').forEach((b) => b.addEventListener('click', () => setPanel('puzzles', +b.dataset.pz)));
   const okCount = cfg.puzzles.filter((_, i) => !puzzleProblems(i).length).length;
@@ -361,7 +368,7 @@ function showResult(code) {
 $('newBtn').addEventListener('click', () => {
   let d = null;
   try { d = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); } catch { /* 무시 */ }
-  if (d && !d.code && d.cfg && confirm('저장하지 않은 작성 중인 구성이 있어요. 이어서 작성할까요?\n(취소를 누르면 빈 구성으로 시작)')) cfg = d.cfg;
+  if (d && !d.code && d.cfg && confirm('저장하지 않은 작성 중인 구성이 있어요. 이어서 작성할까요?\n(취소를 누르면 빈 구성으로 시작)')) { cfg = d.cfg; if (!STORY_IDS.includes(cfg.story)) cfg.story = 'seolhwa'; }
   else if (confirm('체험판 예시 문제를 채워 넣고 시작할까요?\n(취소를 누르면 빈 칸으로 시작)')) {
     cfg = { title: '', story: 'seolhwa', puzzles: DEMO_CONFIG.puzzles.map((p) => ({ image: '', hint: '', options: ['', '', '', ''], ...p })), cooldown: { ...DEFAULT_COOLDOWN } };
   }
@@ -377,7 +384,7 @@ $('loadForm').addEventListener('submit', async (e) => {
   if (!code || !password) { $('loadErr').textContent = '코드와 비밀번호를 입력해 주세요.'; return; }
   try {
     const c = await api('load', { code, password });
-    cfg = { title: c.title, story: c.story, storyVars: c.storyVars || {}, puzzles: c.puzzles.map((p) => ({ image: '', hint: '', options: ['', '', '', ''], ...p })), cooldown: cleanCooldown(c.cooldown) };
+    cfg = { title: c.title, story: STORY_IDS.includes(c.story) ? c.story : 'seolhwa', storyVars: c.storyVars || {}, puzzles: c.puzzles.map((p) => ({ image: '', hint: '', options: ['', '', '', ''], ...p })), cooldown: cleanCooldown(c.cooldown) };
     loaded = { code: c.code, password };
     openEditor();
     toast(`${c.code} 구성을 불러왔어요.`);

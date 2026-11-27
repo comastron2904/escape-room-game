@@ -7,14 +7,32 @@ import {
   roofTileTexture, thatchTexture, plasterTexture, latticeTexture, woodTexture, floorBoardTexture, jangpanTexture,
   stoneWallTexture, graniteTexture, waterTexture, textBoardTexture, jangseungTexture, dancheongTexture,
   yutBoardTexture, plantPanelTexture, najeonTexture, glowTexture, rand,
-  snowTexture, snowyRoofTexture, iceTexture, slateTexture, foliageTexture,
+  snowTexture, snowyRoofTexture, iceTexture, slateTexture, foliageTexture, setTextureSeason,
 } from './textures.js';
 
 const std = (o) => new THREE.MeshStandardMaterial(o);
 
-export function createMaterials() {
+// 계절: 'winter'(눈) · 'autumn'(단풍) · 'summer'(여름밤) · 'rain'(비)
+let SEASON = 'winter';
+export const season = () => SEASON;
+const SEASON_GREENS = {
+  autumn: [0xa8481e, 0xc06a1c, 0x8a3a22, 0x7a6a28, 0xb88a2a],
+  summer: [0x2e4d2a, 0x34552b, 0x3a5e2e],
+  rain: [0x24402a, 0x2a4a2c, 0x30502e],
+};
+const GROUND_TONE = { autumn: 0x7a5a32, summer: 0x3e4f2a, rain: 0x2c3826 };
+export function seasonGreen(r, fallback) {
+  const list = SEASON_GREENS[SEASON];
+  return list ? list[Math.floor(r() * list.length) % list.length] : fallback;
+}
+
+export function createMaterials(seasonName = 'winter') {
+  SEASON = seasonName;
+  setTextureSeason(seasonName);
+  const winter = SEASON === 'winter';
+  const wet = SEASON === 'rain';
   const rep = (t, x, y) => { t.repeat.set(x, y); return t; };
-  return {
+  const M = {
     wood: std({ map: woodTexture('#6e4527', 81), roughness: 0.7 }),
     woodDark: std({ map: woodTexture('#4a2d18', 82), roughness: 0.7 }),
     woodLight: std({ map: woodTexture('#9a6d43', 83), roughness: 0.6 }),
@@ -22,15 +40,18 @@ export function createMaterials() {
     plaster: std({ map: plasterTexture(), roughness: 0.95 }),
     granite: std({ map: graniteTexture(), roughness: 0.9 }),
     stoneWall: std({ map: stoneWallTexture(), roughness: 1 }),
-    tile: std({ map: rep(snowyRoofTexture(), 1, 1), roughness: 0.65, metalness: 0.05, side: THREE.FrontSide, shadowSide: THREE.DoubleSide }),
-    tileDark: std({ color: 0xe9eef5, roughness: 0.85 }),
-    snow: std({ color: 0xf3f6fb, roughness: 0.9 }),
-    ice: std({ color: 0xd8eef8, roughness: 0.08, metalness: 0.1, transparent: true, opacity: 0.85 }),
-    iceSurface: std({ map: iceTexture(), roughness: 0.12, metalness: 0.15 }),
+    tile: winter
+      ? std({ map: rep(snowyRoofTexture(), 1, 1), roughness: 0.65, metalness: 0.05, side: THREE.FrontSide, shadowSide: THREE.DoubleSide })
+      : std({ map: rep(roofTileTexture(), 1, 1), roughness: wet ? 0.32 : 0.75, metalness: wet ? 0.15 : 0.05, side: THREE.FrontSide, shadowSide: THREE.DoubleSide }),
+    tileDark: std({ color: winter ? 0xe9eef5 : 0x34373c, roughness: wet ? 0.35 : 0.85 }),
+    // 겨울이 아니면 눈·고드름은 보이지 않음 (같은 소품을 계절마다 그대로 씀)
+    snow: std({ color: 0xf3f6fb, roughness: 0.9, visible: winter }),
+    ice: std({ color: 0xd8eef8, roughness: 0.08, metalness: 0.1, transparent: true, opacity: 0.85, visible: winter }),
+    iceSurface: winter ? std({ map: iceTexture(), roughness: 0.12, metalness: 0.15 }) : std({ map: waterTexture(), roughness: 0.06, metalness: 0.3, color: 0x9ab0b8 }),
     coal: std({ color: 0x1a1a1c, roughness: 0.6 }),
     carrot: std({ color: 0xe0701e, roughness: 0.6 }),
     under: std({ color: 0x5a3a22, roughness: 0.9, side: THREE.BackSide }),
-    thatch: std({ map: snowTexture(), roughness: 1, side: THREE.FrontSide, shadowSide: THREE.DoubleSide }),
+    thatch: std({ map: winter ? snowTexture() : thatchTexture(), roughness: wet ? 0.6 : 1, side: THREE.FrontSide, shadowSide: THREE.DoubleSide }),
     thatchUnder: std({ color: 0x6b5330, roughness: 1, side: THREE.BackSide }),
     door: std({ map: latticeTexture(), roughness: 0.85, emissive: 0xffc070, emissiveIntensity: 0 }),
     window: std({ map: latticeTexture({ kind: 'grid' }), roughness: 0.85 }),
@@ -75,6 +96,10 @@ export function createMaterials() {
     dark: std({ color: 0x0c0907, roughness: 1 }),
     glow: new THREE.MeshBasicMaterial({ map: glowTexture(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.6 }),
   };
+  // 꼬마전구 다섯 빛깔 (반짝임은 재질 밝기를 바꿔서)
+  if (!winter) M.grassCard.color.setHex(SEASON === 'autumn' ? 0xd8b880 : 0x8fb060);
+  M.fairy = [0xff4a4a, 0xffc83a, 0x4ad46a, 0x4a9cff, 0xff7ad8].map((c) => std({ color: c, emissive: c, emissiveIntensity: 2.2, roughness: 0.4 }));
+  return M;
 }
 
 export function mesh(geo, mat, parent, x = 0, y = 0, z = 0, { cast = true, receive = true } = {}) {
@@ -291,6 +316,8 @@ export function buildHanok(M, {
     front: { x: 0, z: baseD / 2 + 0.95 },
     height: totalH,
     footprint: { w: roofW, d: roofD, cz: 0.35 },
+    // 정면 처마 끝 (꼬마전구 달 자리)
+    eave: { w: roofW, y: topY + 0.12 + r.heightAt(0, roofD / 2 - 0.05), z: 0.35 + roofD / 2, heightAt: (x) => topY + 0.12 + r.heightAt(x, roofD / 2 - 0.05) },
   };
 }
 
@@ -368,12 +395,14 @@ export function blobGeometry(radius, seed, { squash = 0.8, green = 0x3b5e2f, sno
   geo.computeVertexNormals();
   const nor = geo.attributes.normal;
   const col = new Float32Array(pos.count * 3);
-  const base = new THREE.Color(green);
+  const winter = SEASON === 'winter';
+  // 눈 더미 색(snow<0)은 겨울이 아니면 땅 빛깔로
+  const base = new THREE.Color(!winter && snow < 0 ? GROUND_TONE[SEASON] || 0x4a5a30 : green);
   for (let i = 0; i < pos.count; i++) {
     const ny = nor.getY(i);
     const v = hash3(i, seed, 7, 1);
     _gc.copy(base).offsetHSL((v - 0.5) * 0.03, 0, (v - 0.5) * 0.12);
-    const t = Math.min(1, Math.max(0, (ny - snow + (v - 0.5) * 0.35) / 0.25));
+    const t = winter ? Math.min(1, Math.max(0, (ny - snow + (v - 0.5) * 0.35) / 0.25)) : 0;
     _gc.lerp(_sc, t);
     if (pos.getY(i) < -radius * 0.45 * squash) _gc.multiplyScalar(0.7); // 아래쪽 그늘
     col[i * 3] = _gc.r; col[i * 3 + 1] = _gc.g; col[i * 3 + 2] = _gc.b;
@@ -446,7 +475,15 @@ export function buildPersimmonTree(M, scale = 1) {
     const sn = mesh(new THREE.CapsuleGeometry(0.05 * scale, len * 0.5, 3, 6), M.snow, g, mid.x, mid.y + 0.06, mid.z);
     sn.lookAt(end.x, end.y + 0.06, end.z);
     sn.rotateX(Math.PI / 2);
-    if (i % 2 === 0 || i === 3) fruits.push(mesh(fgeo, M.persimmon, g, end.x, end.y - 0.12, end.z));
+    if (i % 2 === 0 || i === 3 || SEASON === 'autumn') fruits.push(mesh(fgeo, M.persimmon, g, end.x, end.y - 0.12, end.z));
+    if (SEASON === 'autumn' || SEASON === 'summer') {
+      // 잎 달린 가지 끝
+      const lc = SEASON === 'autumn' ? (i % 3 ? 0xc0601e : 0x9a7a22) : 0x34552b;
+      mesh(blobGeometry(0.55 * scale, 300 + i, { squash: 0.7, green: lc, snow: 2, rough: 0.4, detail: 1 }), M.blob, g, end.x * 0.9, end.y + 0.05, end.z * 0.9);
+      if (SEASON === 'autumn') {
+        fruits.push(mesh(fgeo, M.persimmon, g, mid.x, mid.y - 0.05, mid.z));
+      }
+    }
   }
   return { group: g, size: { w: 0.6 * scale, d: 0.6 * scale }, fruits };
 }
@@ -457,14 +494,15 @@ export function buildBush(M, seed = 1, scale = 1, kind = null) {
   const inner = new THREE.Group(); // 흔들림용
   g.add(inner);
   const r = rand(seed * 131 + 9);
-  const type = kind || (r() < 0.72 ? 'evergreen' : 'bare');
+  const type = kind || (r() < (SEASON === 'winter' ? 0.72 : SEASON === 'autumn' ? 0.8 : 1) ? 'evergreen' : 'bare');
   if (type === 'evergreen') {
     const n = 2 + Math.floor(r() * 2);
     for (let i = 0; i < n; i++) {
       const a = (i / n) * Math.PI * 2 + r();
       const rr = i === 0 ? 0 : (0.3 + r() * 0.2) * scale;
       const s = (i === 0 ? 0.6 : 0.42 + r() * 0.15) * scale;
-      mesh(blobGeometry(s, seed * 7 + i, { squash: 0.8, green: r() < 0.5 ? 0x34552b : 0x2e4d2a, snow: 0.45 }), M.blob, inner, Math.cos(a) * rr, s * 0.75, Math.sin(a) * rr);
+      const gc = r() < 0.5 ? 0x34552b : 0x2e4d2a;
+      mesh(blobGeometry(s, seed * 7 + i, { squash: 0.8, green: SEASON === 'autumn' && i > 0 ? seasonGreen(r, gc) : SEASON === 'winter' ? gc : seasonGreen(r, gc), snow: 0.45 }), M.blob, inner, Math.cos(a) * rr, s * 0.75, Math.sin(a) * rr);
     }
     // 잎 카드: 덩어리 테두리를 보송보송하게
     for (let k = 0; k < 5; k++) {
@@ -736,7 +774,7 @@ export function buildAltar(M) {
   return { group: g, size: { w: S, d: S }, slab, sockets };
 }
 
-function taegukTexture() {
+export function taegukTexture() {
   const c = document.createElement('canvas');
   c.width = c.height = 256;
   const ctx = c.getContext('2d');
@@ -768,18 +806,19 @@ export function buildTablet(color) {
 }
 
 // 지하 계단 (마당 아래)
-export function buildStairwell(M, size = 1.7, depth = 3.0) {
+export function buildStairwell(M, size = 1.7, depth = 3.0, { step = null, wall = null, glow: glowRGB = '255,190,90' } = {}) {
   const g = new THREE.Group();
   const steps = 10;
   const stepD = size / steps;
   for (let i = 0; i < steps; i++) {
     const y = -((i + 1) * depth) / steps;
-    mesh(box(size - 0.1, 0.12, stepD + 0.02), M.granite, g, 0, y + 0.06, -size / 2 + (i + 0.5) * stepD);
+    mesh(box(size - 0.1, 0.12, stepD + 0.02), step || M.granite, g, 0, y + 0.06, -size / 2 + (i + 0.5) * stepD);
   }
-  for (const s of [-1, 1]) mesh(box(0.1, depth, size), M.stoneWall, g, s * size / 2, -depth / 2, 0);
-  mesh(box(size, depth, 0.1), M.stoneWall, g, 0, -depth / 2, -size / 2);
-  mesh(box(size, depth, 0.1), M.stoneWall, g, 0, -depth / 2, size / 2);
-  const glow = mesh(new THREE.PlaneGeometry(size * 1.2, size * 1.2).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: glowTexture('255,190,90'), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.9 }), g, 0, -depth + 0.2, size * 0.3, { cast: false });
+  const wm = wall || M.stoneWall;
+  for (const s of [-1, 1]) mesh(box(0.1, depth, size), wm, g, s * size / 2, -depth / 2, 0);
+  mesh(box(size, depth, 0.1), wm, g, 0, -depth / 2, -size / 2);
+  mesh(box(size, depth, 0.1), wm, g, 0, -depth / 2, size / 2);
+  const glow = mesh(new THREE.PlaneGeometry(size * 1.2, size * 1.2).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: glowTexture(glowRGB), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.9 }), g, 0, -depth + 0.2, size * 0.3, { cast: false });
   return { group: g, glow };
 }
 

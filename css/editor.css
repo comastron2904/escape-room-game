@@ -34,6 +34,7 @@ body.editor {
 .story-card .hj { font-family: var(--serif); color: var(--ink-2); font-size: 12px; }
 .story-card h3 { margin: 2px 0 6px; font-family: var(--serif); font-size: 17px; }
 .story-card p { margin: 0; font-size: 13px; line-height: 1.5; color: #4a3826; }
+.story-card .mood { display: inline-block; margin: 0 0 6px; padding: 2px 8px; border-radius: 99px; background: #23304a; color: #f3e7c6; font-size: 11.5px; font-weight: 700; }
 .story-card .tr { margin-top: 8px; font-size: 12px; font-weight: 700; color: var(--green); }
 .storyboard summary { cursor: pointer; font-weight: 700; padding: 6px 0; }
 .sb-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; counter-reset: sb; }
@@ -236,3 +237,7 @@ body.editor .toasts { top: 76px; }
 .pz label.lbl { font-size: 13px; letter-spacing: .02em; }
 .pz-right .type-tog { display: grid; grid-template-columns: repeat(3, 1fr); width: 100%; }
 .pz-right .type-tog button { padding: 9px 6px; border-bottom: 1px solid rgba(42,29,20,.12); }
+
+.sb-list li.map { background: #23304a; color: #f3e7c6; padding-left: 14px; counter-increment: none; }
+.sb-list li.map::before { display: none; }
+.sb-list li.map span { color: #d9cfb4; }

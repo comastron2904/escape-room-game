@@ -5,21 +5,21 @@
 
 export const PUZZLE_COUNT = 7; // 교과 문제 퍼즐 수 (+ 마지막 석단 퍼즐 = 8)
 
-// 퍼즐 장소 (순서 고정)
-export const SPOTS = [
-  { id: 'well', name: '마을 우물', short: '우물', where: '마을 동쪽 우물', reward: 'key', area: 'village' },
-  { id: 'snowman', name: '석판 든 눈사람', short: '눈사람', where: '중앙 마당 서남쪽의 눈사람', area: 'village' },
-  { id: 'pavilion', name: '연못가 정자', short: '정자', where: '마을 서남쪽 언 연못가의 정자', area: 'village' },
-  { id: 'bandaji', name: '서당 반닫이', short: '서당', where: '서당(書堂) 안 반닫이', area: 'seodang' },
-  { id: 'screen', name: '대감댁 병풍', short: '대감댁', where: '대감댁(大監宅) 안 병풍 (대문 열쇠 필요)', reward: 'lamp', area: 'daegam' },
-  { id: 'cabinet', name: '약방 약장', short: '약방', where: '약방(藥房) 안 약장', area: 'yakbang' },
-  { id: 'najeon', name: '별당 자개함', short: '별당', where: '별당(別堂) 안 자개함 (등잔 필요)', area: 'byeoldang' },
-];
+import { getSpots, getTheme } from './themes.js';
+export { getSpots, getTheme };
 
-export const ITEMS = {
-  key: { name: '놋쇠 열쇠', icon: '🗝️', desc: '우물 두레박 자물쇠 안에서 나온 묵직한 열쇠. 대감댁 대문에 맞을 것 같다.' },
+// 퍼즐 장소 (순서 고정) — 이름은 이야기(테마)마다 다름. SPOTS 는 기본(설화) 이름
+export const SPOTS = getSpots('seolhwa');
+
+const ITEM_BASE = {
+  key: { name: '놋쇠 열쇠', icon: '🗝️', desc: '묵직한 놋쇠 열쇠. 대감댁 대문에 맞을 것 같다.' },
   lamp: { name: '등잔', icon: '🪔', desc: '대감댁 병풍 뒤 궤짝에서 나온 기름 등잔. 어두운 별당을 밝힐 수 있다.' },
 };
+export const ITEMS = ITEM_BASE;
+export function getItems(themeId) {
+  const t = getTheme(themeId);
+  return { ...ITEM_BASE, key: { ...ITEM_BASE.key, desc: t.keyDesc || ITEM_BASE.key.desc } };
+}
 
 // 방위
 export const DIRS = {
@@ -38,40 +38,44 @@ export function fragmentText(story, order, dir) {
 // 기타 소품 문구 (이야기와 무관)
 export const FLAVOR = {
   books: { title: '책장', icon: '📚', text: '천자문, 명심보감, 소학… 오래된 책들이 가지런히 꽂혀 있다.' },
-  jars: { title: '장독대', icon: '🏺', text: '항아리마다 소복이 눈이 쌓였다. 된장, 간장, 고추장이 겨울을 나고 있다.' },
-  persimmon: { title: '감나무', icon: '🍊', text: '잎이 모두 진 가지 끝에 까치밥으로 남긴 감 몇 개가 매달려 있다.' },
-  sotdae: { title: '솟대', icon: '🐦', text: '솟대 꼭대기 나무 새의 머리에 눈이 소복하다. 마을의 평안을 비는 솟대다.' },
-  pond: { title: '언 연못', icon: '🧊', text: '연못이 꽁꽁 얼었다. 얼음 아래로 비단잉어가 천천히 움직인다.' },
   cushions: { title: '방석', icon: '🟥', text: '비단 방석이 가지런히 놓여 있다. 방바닥이 따끈하다.' },
   herbs: { title: '약초 채반', icon: '🌿', text: '채반 위에 약초가 말라 가고 있다. 쌉싸름한 냄새가 난다.' },
   gayageum: { title: '가야금', icon: '🎶', text: '줄을 튕기자 맑은 가야금 소리가 별당 가득 울린다.' },
-  snowmen: { title: '눈사람', icon: '⛄', text: '아이들이 만든 눈사람이다. 코가 당근이다.' },
   daegam_locked: { title: '굳게 잠긴 대감댁', icon: '🔒', text: '대감댁 문에 커다란 놋쇠 자물쇠가 걸려 있다. 열쇠가 있어야 들어갈 수 있겠다.\n\n마을 어딘가의 자물쇠 안에 열쇠가 들어 있을지도 모른다.' },
   byeoldang_dark: { title: '어두운 별당', icon: '🌑', text: '문틈으로 들여다보니 안이 칠흑같이 어둡다. 불빛이 있어야 들어갈 수 있겠다.' },
-  altar_empty: { title: '방위 석단', icon: '🪨', text: '석단의 네 방향에 東·西·南·北이 새겨진 돌이 있다. 가운데에는 태극 무늬 덮개돌.\n\n일곱 조각을 모두 모은 뒤 다시 오자.' },
 };
+// 테마별 마을 소품 문구를 합친 목록 (label 은 [이름, 행동])
+export function getFlavor(themeId) {
+  const t = getTheme(themeId);
+  const out = { ...FLAVOR };
+  for (const [k, v] of Object.entries(t.flavor || {})) if (v) out[k] = v;
+  out.altar_empty = { title: t.final.name, icon: t.final.icon, text: t.final.empty };
+  return out;
+}
 
 // ---- 진행 목표 + 단계별 힌트 ----
 // 힌트 하나를 볼 때마다 기록에 +1분 (서버에서 셈)
 export const HINT_PENALTY_MS = 60_000;
-export function buildGoals(cfg) {
+export function buildGoals(cfg, themeId) {
+  const theme = getTheme(themeId);
+  const spots = getSpots(themeId);
   const goals = [{
     id: 'intro', title: '마을 입구의 장승에게 전설 듣기',
     done: (s) => s.clues.includes('intro'),
     hints: [{ text: '시작 지점 바로 앞에 서 있는 두 장승에게 다가가 E(또는 화면의 버튼)를 누르세요.' }],
   }];
-  SPOTS.forEach((sp, i) => {
+  spots.forEach((sp, i) => {
     const hints = [{ text: `문제는 ${sp.where}에 있어요.` }];
-    if (sp.id === 'screen') hints.push({ text: '대감댁 열쇠는 마을 우물 문제를 풀면 나와요.' });
+    if (sp.id === 'screen') hints.push({ text: `대감댁 열쇠는 ${spots[0].name} 문제를 풀면 나와요.` });
     if (sp.id === 'najeon') hints.push({ text: '별당에 들어가려면 등잔이 필요해요. 등잔은 대감댁 병풍 문제를 풀면 나와요.' });
     if (cfg.puzzles[i]?.hasHint || cfg.puzzles[i]?.hint) hints.push({ teacher: i, text: null });
     goals.push({ id: `p${i}`, title: `${i + 1}. ${sp.name} 문제 풀기`, done: (s) => s.solved.includes(i), hints });
   });
   goals.push({
-    id: 'final', title: '8. 중앙 마당 석단 — 일곱 걸음 밟기',
+    id: 'final', title: `8. ${theme.final.name} — 일곱 걸음 밟기`,
     done: (s) => !!s.flags.stairs_open,
     hints: [
-      { text: '석단 옆 비석을 읽어 보세요. 일곱 조각은 📒 수첩에 모두 기록돼 있어요.' },
+      { text: `${theme.final.where}에 있어요. 근처 ${theme.stele.title}도 읽어 보세요. 일곱 조각은 📒 수첩에 모두 기록돼 있어요.` },
       { text: '조각의 〔一〕〔二〕〔三〕… 은 순서예요. 一=1, 二=2, 三=3, 四=4, 五=5, 六=6, 七=7' },
       { text: '해가 뜨는 쪽=동(東), 해가 지는 쪽=서(西), 나침반 빨간 바늘이 가리키는 반대쪽=남(南), 북극성이 빛나는 쪽=북(北)' },
     ],
@@ -79,7 +83,7 @@ export function buildGoals(cfg) {
   goals.push({
     id: 'treasure', title: '지하로 내려가 보물 찾기',
     done: (s) => !!s.finished,
-    hints: [{ text: '석단 가운데에 열린 계단으로 내려가 보물 상자를 여세요.' }],
+    hints: [{ text: `${theme.final.name}에 열린 ${theme.final.stairs}으로 내려가 ${theme.final.chest}을(를) 살펴보세요.`.replace('을(를)', /[가-힣]$/.test(theme.final.chest) && (theme.final.chest.charCodeAt(theme.final.chest.length - 1) - 0xac00) % 28 ? '을' : '를') }],
   });
   return goals;
 }

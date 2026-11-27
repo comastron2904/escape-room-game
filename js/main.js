@@ -2,7 +2,7 @@
 import { generateLook, drawCharacter, loadProfile, saveProfile } from './character.js';
 import { loadSave, saveState, clearSave, freshState, formatTime } from './game/state.js';
 import { createGame } from './game/logic.js';
-import { ITEMS, DIRS, DIR_KEYS, DEMO_CONFIG, HINT_PENALTY_MS, PUZZLE_COUNT, fragmentText } from './game/content.js';
+import { getItems, getTheme, DIRS, DIR_KEYS, DEMO_CONFIG, HINT_PENALTY_MS, PUZZLE_COUNT, fragmentText } from './game/content.js';
 import { getStory, fixJosa } from './game/stories.js';
 import { createRemoteBackend, createLocalBackend } from './api.js';
 import { ANSWER_TYPES } from './game/answer.js';
@@ -14,7 +14,10 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const params = new URLSearchParams(location.search);
 
-const AREA_NAMES = { village: '눈 내린 한옥마을', seodang: '서당 (書堂)', daegam: '대감댁 (大監宅)', yakbang: '약방 (藥房)', byeoldang: '별당 (別堂)', vault: '지하 보물창고' };
+const AREA_NAMES = { village: '한옥마을', seodang: '서당 (書堂)', daegam: '대감댁 (大監宅)', yakbang: '약방 (藥房)', byeoldang: '별당 (別堂)', vault: '지하 보물창고' };
+const theme = () => getTheme(story?.id);
+const ITEMS = new Proxy({}, { get: (_, k) => getItems(story?.id)[k] });
+const GOAL_TEXT = () => `마을 곳곳 일곱 곳에 문제가 숨겨져 있어요. 문제를 풀어 자물쇠를 열 때마다 조각을 하나씩 얻고, 일곱 조각을 모아 ${theme().final.where}의 마지막 퍼즐을 풀면 보물로 가는 길이 열립니다.`;
 
 let world = null;
 let game = null;
@@ -118,7 +121,7 @@ function uiFragment({ order, text, count, total }) {
       <p class="get-kicker">조각 ${count} / ${total}</p>
       <h2>${esc(story.fragment)}</h2>
       <div class="frag-box"><span class="frag-no">${['一', '二', '三', '四', '五', '六', '七', '八', '九', '十'][order - 1]}</span><span>${esc(text.split('— ')[1] || text)}</span></div>
-      <p class="m-desc">수첩(📒)에 기록했어요. 일곱 조각을 모아 중앙 마당의 석단으로 가세요.</p>
+      <p class="m-desc">수첩(📒)에 기록했어요. 일곱 조각을 모아 ${esc(theme().final.where)}에 가세요.</p>
       <div class="m-actions" style="justify-content:center"><button class="btn btn-gold" data-ok type="button">확인</button></div>
     </div>`, { onKey: okKey });
   card().querySelector('[data-ok]').addEventListener('click', () => closeModal(true));
@@ -302,8 +305,8 @@ function uiPuzzle({ index, spot, intro, puzzle, solved, fragment, submit, lockUn
 // ---- 마지막: 일곱 걸음 ----
 function uiFinal({ length, fragments, onPress, submit, lockUntil = 0, onLock }) {
   let input = null, busy = false;
-  const p = openModal(`${head('🪨', '방위 석단', '마지막 퍼즐 · 일곱 걸음')}
-    <p class="m-desc">조각 번호 〔一〕부터 〔七〕까지 차례대로, 조각에 적힌 <b>방위</b>의 돌을 누르세요. 아래 칸의 번호가 조각 번호예요.</p>
+  const p = openModal(`${head(theme().final.icon, theme().final.name, '마지막 퍼즐 · 일곱 걸음')}
+    <p class="m-desc">조각 번호 〔一〕부터 〔七〕까지 차례대로, 조각에 적힌 <b>방위</b>에 맞춰 ${esc(theme().final.stones)}을 누르세요. 아래 칸의 번호가 조각 번호예요.</p>
     <div class="frag-list">${fragments.map((f) => `<div>${esc(f)}</div>`).join('')}</div>
     ${answerInput('direction', length, { numbered: true })}
     <p class="err" data-err></p>
@@ -326,7 +329,7 @@ function uiFinal({ length, fragments, onPress, submit, lockUntil = 0, onLock }) 
   async function go() {
     const v = input.get();
     if (busy || v.length !== length) return;
-    busy = true; ok.disabled = true; err.textContent = '석단이 흔들린다…';
+    busy = true; ok.disabled = true; err.textContent = theme().final.pressing;
     let r;
     try { r = await submit(v); } catch (e) { err.textContent = e.message; busy = false; ok.disabled = false; return; }
     if (r?.ok) { closeModal(v); return; }
@@ -372,7 +375,7 @@ function refreshHud() {
 }
 
 // ---- 수첩 ----
-const CLUE_TITLES = { intro: '전설', stele: '석단 옆 비석', letter: '서안 위의 종이', mirror: '경대', yakbang_note: '약방 쪽지', scroll_byeoldang: '별당의 족자', final: story => story.treasure };
+const CLUE_TITLES = { intro: '전설', stele: () => theme().stele.title, letter: '서안 위의 종이', mirror: '경대', yakbang_note: '약방 쪽지', scroll_byeoldang: '별당의 족자', final: story => story.treasure };
 function clueText(id) {
   return { intro: story.intro, stele: story.stele, letter: story.letter, mirror: story.mirror, yakbang_note: story.yakbang_note, scroll_byeoldang: story.scroll_byeoldang, final: story.finalLetter }[id] || '';
 }
@@ -490,7 +493,7 @@ function showIntro() {
     : '• WASD / 방향키로 이동, Shift 로 달리기\n• 반짝이는 곳에 다가가 E 또는 Space 로 조사\n• 클릭해도 걸어가서 조사해요. 휠로 확대/축소';
   return uiText({
     title: config.title, from: (story.legend || `${story.name}의 전설`),
-    text: `${story.synopsis}\n\n마을 곳곳 일곱 곳에 문제가 숨겨져 있어요. 문제를 풀어 자물쇠를 열 때마다 조각을 하나씩 얻고, 일곱 조각을 모아 중앙 마당의 석단 퍼즐을 풀면 보물로 가는 길이 열립니다.\n\n─ 조작 방법 ─\n${how}\n\n막히면 💡 힌트(1개당 +1분), 모은 조각은 📒 수첩에서 볼 수 있어요.`,
+    text: `${story.synopsis}\n\n${GOAL_TEXT()}\n\n─ 조작 방법 ─\n${how}\n\n막히면 💡 힌트(1개당 +1분), 모은 조각은 📒 수첩에서 볼 수 있어요.`,
     icon: '🏯',
   });
 }
@@ -735,7 +738,7 @@ function waitInLobby() {
     $('lobbyTitle').textContent = config.title || story.title;
     $('lobbyStory').textContent = (story.legend || `${story.name}의 전설`);
     $('lobbyName').textContent = state.nickname;
-    $('lobbyText').textContent = `${story.synopsis}\n\n마을 곳곳 일곱 곳에 문제가 숨겨져 있어요. 문제를 풀어 자물쇠를 열 때마다 조각을 하나씩 얻고, 일곱 조각을 모아 중앙 마당의 석단 퍼즐을 풀면 보물로 가는 길이 열립니다.\n\n• 이동: ${document.body.classList.contains('touch') ? '화면을 눌러 이동' : 'WASD / 방향키, 클릭'}\n• 조사: 핀이 있는 곳에서 ${document.body.classList.contains('touch') ? '버튼 누르기' : 'E 또는 Space'}\n• 💡 힌트는 1개당 +1분, 오답을 내면 잠시 기다려야 해요.`;
+    $('lobbyText').textContent = `${story.synopsis}\n\n${GOAL_TEXT()}\n\n• 이동: ${document.body.classList.contains('touch') ? '화면을 눌러 이동' : 'WASD / 방향키, 클릭'}\n• 조사: 핀이 있는 곳에서 ${document.body.classList.contains('touch') ? '버튼 누르기' : 'E 또는 Space'}\n• 💡 힌트는 1개당 +1분, 오답을 내면 잠시 기다려야 해요.`;
     el.hidden = false;
     world?.setPaused(true);
     $('timer').textContent = '대기 중';
@@ -865,7 +868,10 @@ async function main() {
   $('gameTitle').textContent = config.title || story.title;
   document.title = `${config.title || story.title} · 3D 방탈출`;
   $('loading').classList.remove('done');
-  $('loadingText').textContent = '눈 내린 한옥마을을 짓고 있어요…';
+  $('loadingText').textContent = theme().loading;
+  AREA_NAMES.village = theme().village;
+  AREA_NAMES.vault = theme().final.vault;
+  document.body.dataset.theme = story.id;
 
   const ui = {
     text: uiText, itemGet: uiItemGet, fragment: uiFragment, puzzle: uiPuzzle, finalPuzzle: uiFinal,

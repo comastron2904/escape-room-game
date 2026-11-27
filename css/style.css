@@ -40,6 +40,43 @@ body.lobby button { touch-action: manipulation; }
   display: block; touch-action: none; cursor: pointer; outline: none;
 }
 
+/* ---------- 하늘 느낌 (화면 위쪽) · 번개 ---------- */
+.skyfx { position: fixed; inset: 0; z-index: 1; pointer-events: none; opacity: 0; transition: opacity .6s ease; }
+.skyfx[data-sky]:not([data-sky='']) { opacity: 1; }
+.skyfx[data-sky='moon'] {
+  background:
+    radial-gradient(circle at 84% 9%, rgba(255,250,228,.98) 0 34px, rgba(255,244,200,.55) 37px, rgba(190,210,255,.22) 90px, rgba(120,150,230,0) 220px),
+    linear-gradient(180deg, rgba(8,14,34,.78) 0%, rgba(10,18,40,.25) 24%, rgba(0,0,0,0) 42%);
+}
+.skyfx[data-sky='moonhaze'] {
+  background:
+    radial-gradient(circle at 18% 8%, rgba(235,242,255,.75) 0 24px, rgba(200,218,255,.35) 30px, rgba(150,175,230,.14) 110px, rgba(0,0,0,0) 240px),
+    linear-gradient(180deg, rgba(14,22,42,.7) 0%, rgba(14,22,42,.18) 26%, rgba(0,0,0,0) 44%);
+}
+.skyfx[data-sky='sunset'] {
+  background:
+    radial-gradient(ellipse at 6% 0%, rgba(255,190,110,.75) 0, rgba(255,120,70,.35) 22%, rgba(255,90,60,0) 48%),
+    linear-gradient(180deg, rgba(120,40,60,.55) 0%, rgba(220,110,70,.18) 26%, rgba(0,0,0,0) 46%),
+    linear-gradient(0deg, rgba(40,10,30,.18) 0%, rgba(0,0,0,0) 30%);
+}
+.skyfx[data-sky='storm'] {
+  background:
+    radial-gradient(ellipse at 30% -10%, rgba(30,36,52,.9) 0, rgba(20,24,36,.6) 28%, rgba(0,0,0,0) 55%),
+    radial-gradient(ellipse at 80% -15%, rgba(26,30,46,.85) 0, rgba(0,0,0,0) 50%),
+    linear-gradient(180deg, rgba(6,8,14,.65) 0%, rgba(0,0,0,0) 40%);
+}
+.skyfx[data-sky='stars'] {
+  background:
+    radial-gradient(1.5px 1.5px at 12% 6%, #fff 99%, transparent), radial-gradient(1.5px 1.5px at 27% 13%, #ffe9b0 99%, transparent),
+    radial-gradient(2px 2px at 44% 4%, #fff 99%, transparent), radial-gradient(1.5px 1.5px at 63% 10%, #fff 99%, transparent),
+    radial-gradient(2px 2px at 78% 5%, #cfe0ff 99%, transparent), radial-gradient(1.5px 1.5px at 91% 14%, #fff 99%, transparent),
+    radial-gradient(1.5px 1.5px at 35% 20%, #fff 99%, transparent), radial-gradient(1.5px 1.5px at 70% 22%, #ffe9b0 99%, transparent),
+    linear-gradient(180deg, rgba(12,18,40,.75) 0%, rgba(12,18,40,.2) 25%, rgba(0,0,0,0) 42%);
+  animation: twinkle 3.2s ease-in-out infinite alternate;
+}
+@keyframes twinkle { from { filter: brightness(.85); } to { filter: brightness(1.15); } }
+.flashfx { position: fixed; inset: 0; z-index: 2; pointer-events: none; background: #e8eeff; opacity: 0; mix-blend-mode: screen; }
+
 /* ---------- 상단 ---------- */
 .hud-top {
   position: fixed; top: 0; left: 0; right: 0; z-index: 6;

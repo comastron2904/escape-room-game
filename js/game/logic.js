@@ -1,19 +1,10 @@
 // 상호작용 규칙: 어떤 물건을 누르면 무슨 일이 일어나는지
-import { SPOTS, ITEMS, FLAVOR, fragmentText, buildGoals } from './content.js';
+import { getSpots, getItems, getFlavor, getTheme, fragmentText, buildGoals } from './content.js';
 import { addItem, removeItem, addClue, markSeen, has } from './state.js';
 
-const SPOT_INDEX = Object.fromEntries(SPOTS.map((s, i) => [s.id, i]));
-
-const LABELS = {
+const BASE_LABELS = {
   jangseung: ['장승', '전설 듣기'],
   stele: ['비석', '읽기'],
-  altar: ['방위 석단', '일곱 걸음 밟기'],
-  stairs: ['지하로 내려가는 계단', '내려가기'],
-  jars: ['장독대', '살펴보기'],
-  persimmon: ['감나무', '살펴보기'],
-  sotdae: ['솟대', '살펴보기'],
-  pond: ['언 연못', '살펴보기'],
-  snowmen: ['눈사람', '살펴보기'],
   door_seodang: ['서당 (書堂)', '들어가기'],
   door_daegam: ['대감댁 (大監宅)', '들어가기'],
   door_yakbang: ['약방 (藥房)', '들어가기'],
@@ -30,12 +21,26 @@ const LABELS = {
   chest: ['보물 상자', '열기'],
   exit_vault: ['계단', '마당으로 올라가기'],
 };
-SPOTS.forEach((s, i) => { LABELS[s.id] = [`${s.name}`, '문제 풀기', i]; });
-for (const a of ['seodang', 'daegam', 'yakbang', 'byeoldang']) LABELS[`exit_${a}`] = ['문', '밖으로 나가기'];
+for (const a of ['seodang', 'daegam', 'yakbang', 'byeoldang']) BASE_LABELS[`exit_${a}`] = ['문', '밖으로 나가기'];
 
 export function createGame({ state, ui, world, save, backend, config, story }) {
   const flags = state.flags;
-  const goals = buildGoals(config);
+  const theme = getTheme(story.id);
+  const SPOTS = getSpots(story.id);
+  const ITEMS = getItems(story.id);
+  const FLAVOR = getFlavor(story.id);
+  const SPOT_INDEX = Object.fromEntries(SPOTS.map((s, i) => [s.id, i]));
+  const fin = theme.final;
+  const LABELS = {
+    ...BASE_LABELS,
+    stele: [theme.stele.title, '읽기'],
+    altar: [fin.name, '일곱 걸음 밟기'],
+    stairs: [fin.stairs, '내려가기'],
+    chest: [fin.chest, fin.chestAction],
+  };
+  for (const [k, v] of Object.entries(FLAVOR)) if (v?.label) LABELS[k] = v.label;
+  SPOTS.forEach((s, i) => { LABELS[s.id] = [`${s.name}`, '문제 풀기', i]; });
+  const goals = buildGoals(config, story.id);
 
   async function storyText(id, title, text, from, icon) {
     const isNew = addClue(state, id);
@@ -115,7 +120,7 @@ export function createGame({ state, ui, world, save, backend, config, story }) {
 
     switch (id) {
       case 'jangseung': return storyText('intro', (story.legend || `${story.name}의 전설`), story.intro, '마을 입구 · 장승', '🪵');
-      case 'stele': return storyText('stele', '석단 옆 비석', story.stele, '중앙 마당', '🪨');
+      case 'stele': return storyText('stele', theme.stele.title, story.stele, theme.stele.from, story.id === 'hong' ? '📜' : '🪨');
       case 'letter': return storyText('letter', '서안 위의 종이', story.letter, '서당', '📜');
       case 'scroll_seodang': return ui.text({ title: '족자', text: story.scroll3d.seodang.join('\n'), icon: '📜' });
       case 'mirror': return storyText('mirror', '경대', story.mirror, '대감댁', '🪞');
@@ -126,7 +131,7 @@ export function createGame({ state, ui, world, save, backend, config, story }) {
       case 'stairs': return world.enterArea('vault');
       case 'chest': return openChest();
       default:
-        if (FLAVOR[id]) return ui.text(FLAVOR[id]);
+        if (FLAVOR[id]) { if (FLAVOR[id].sfx) ui.sfx(FLAVOR[id].sfx); return ui.text(FLAVOR[id]); }
         return null;
     }
   }
@@ -159,7 +164,7 @@ export function createGame({ state, ui, world, save, backend, config, story }) {
       flags[`got_${sp.reward}`] = true;
       await getItem(sp.reward);
     }
-    if (state.solved.length === config.puzzles.length) ui.toast('✨ 일곱 조각을 모두 모았다! 중앙 마당의 석단으로 가자.');
+    if (state.solved.length === config.puzzles.length) ui.toast(`✨ 일곱 조각을 모두 모았다! 이제 ${fin.icon} ${fin.name}에 가 보자.`);
   }
 
   async function openFinal() {
@@ -169,7 +174,7 @@ export function createGame({ state, ui, world, save, backend, config, story }) {
     // 얻은 순서가 아니라 조각 번호(一~七) 순서로 보여 줌
     const frags = [...state.solved].sort((a, b) => a - b).map((i) => fragmentText(story, i + 1, state.fragments[i]));
     const seq = await ui.finalPuzzle({
-      length: config.puzzles.length, fragments: frags, story,
+      length: config.puzzles.length, fragments: frags, story, theme,
       onPress: (d) => world.fx('altarPress', d),
       lockUntil: state.locks?.final || 0,
       onLock: (until) => { state.locks = { ...(state.locks || {}), final: until }; save(); },
@@ -180,9 +185,9 @@ export function createGame({ state, ui, world, save, backend, config, story }) {
     state.finalSeq = seq;
     save();
     ui.sfx('rumble');
-    ui.toast('우르르릉… 석단 가운데 덮개돌이 움직인다!');
+    ui.toast(fin.toast);
     await world.openStairs(true);
-    await ui.text({ title: '길이 열렸다', text: '덮개돌이 밀려나고 땅속으로 내려가는 돌계단이 드러났다.\n아래에서 희미한 빛이 새어 나온다.', icon: '✨' });
+    await ui.text({ title: fin.openTitle, text: fin.openText, icon: '✨' });
   }
 
   async function openChest() {
@@ -193,14 +198,14 @@ export function createGame({ state, ui, world, save, backend, config, story }) {
       } catch (e) {
         return ui.text({ title: '기록을 저장하지 못했어요', text: `${e.message}\n\n잠시 후 다시 상자를 눌러 주세요.`, icon: '⚠️' });
       }
-      if (!r?.ok) return ui.text({ title: '상자가 열리지 않는다', text: '석단의 걸음이 맞지 않았던 것 같다. 석단으로 돌아가 다시 밟아 보자.', icon: '🔒' });
+      if (!r?.ok) return ui.text({ title: '열리지 않는다', text: `${fin.name}의 걸음이 맞지 않았던 것 같다. 돌아가 다시 밟아 보자.`, icon: '🔒' });
       state.finished = true;
       state.result = { elapsedMs: r.elapsedMs, hints: r.hints, scoreMs: r.scoreMs, rank: r.rank };
       save();
       world.fx('openChest');
       ui.sfx('treasure');
       await wait(1400);
-      await storyText('final', story.treasure, story.finalLetter, '지하 보물창고', '💰');
+      await storyText('final', story.treasure, story.finalLetter, fin.vault, '💰');
     }
     return ui.ending();
   }
@@ -232,8 +237,7 @@ export function createGame({ state, ui, world, save, backend, config, story }) {
     save();
   }
 
-  return { interact, labelFor, isNew, markerKind, goalList, revealHint };
+  return { interact, labelFor, isNew, markerKind, goalList, revealHint, theme, items: ITEMS };
 }
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-export { ITEMS };

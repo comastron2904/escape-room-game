@@ -75,6 +75,10 @@ export function createSfx() {
     bucket: () => { noise({ dur: 0.6, vol: 0.12, freq: 800, q: 2 }); tone(500, { dur: 0.15, vol: 0.1, at: 0.6, type: 'triangle' }); },
     lid: () => { tone(260, { dur: 0.2, type: 'triangle', vol: 0.2 }); noise({ dur: 0.15, vol: 0.1, freq: 900 }); },
     rumble: () => { noise({ dur: 2.2, vol: 0.5, freq: 90, q: 0.7, type: 'lowpass' }); tone(55, { dur: 2.2, vol: 0.25, attack: 0.3 }); },
+    crack: () => { noise({ dur: 0.18, vol: 0.35, freq: 4200, q: 0.6 }); noise({ dur: 0.4, vol: 0.2, freq: 2500, q: 1.2, at: 0.12 }); tone(1800, { dur: 0.3, type: 'triangle', vol: 0.06, at: 0.1, slide: 0.5 }); },
+    zap: () => { noise({ dur: 0.25, vol: 0.3, freq: 3000, q: 0.5 }); tone(140, { dur: 0.4, type: 'sawtooth', vol: 0.06, slide: 2.5 }); },
+    thunder: () => { noise({ dur: 0.25, vol: 0.45, freq: 1800, q: 0.4 }); noise({ dur: 3.2, vol: 0.55, freq: 120, q: 0.6, type: 'lowpass', at: 0.08 }); tone(45, { dur: 2.6, vol: 0.18, attack: 0.2, at: 0.1 }); },
+    thunderFar: () => { noise({ dur: 3.0, vol: 0.32, freq: 90, q: 0.6, type: 'lowpass' }); tone(40, { dur: 2.4, vol: 0.1, attack: 0.5 }); },
     gayageum: () => [392, 440, 523, 587, 659].forEach((f, i) => pluck(f, i * 0.22)),
     treasure: () => { [523, 659, 784, 1047, 1319, 1568].forEach((f, i) => tone(f, { dur: 0.6, type: 'triangle', vol: 0.18, at: i * 0.1 })); noise({ dur: 1.2, vol: 0.06, freq: 6000, q: 0.3, at: 0.4 }); },
   };

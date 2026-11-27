@@ -15,6 +15,8 @@ export function rand(seed) {
 }
 
 let maxAniso = 8;
+let TEX_SEASON = 'winter';
+export function setTextureSeason(v) { TEX_SEASON = v || 'winter'; }
 export function setMaxAnisotropy(v) { maxAniso = Math.min(16, v || 1); }
 
 export function canvasTexture(w, h, draw, { repeat = null, srgb = true } = {}) {
@@ -752,7 +754,7 @@ export function foliageTexture(kind, seed = 1) {
   return canvasTexture(256, 256, (ctx, w, h) => {
     const r = rand(seed * 7919 + kind.length * 31);
     ctx.clearRect(0, 0, w, h);
-    const snowAt = (y) => r() < Math.max(0, 0.55 - y / h) * 1.2; // 위쪽에 눈
+    const snowAt = (y) => TEX_SEASON === 'winter' && r() < Math.max(0, 0.55 - y / h) * 1.2; // 위쪽에 눈
     if (kind === 'shrub') {
       // 가운데가 빽빽한 둥근 잎 덩어리
       for (let i = 0; i < 520; i++) {
@@ -875,4 +877,185 @@ function shadeHex(hex, amt) {
   const n = parseInt(hex.slice(1), 16);
   const f = (v) => Math.max(0, Math.min(255, Math.round(v + 255 * amt)));
   return `rgb(${f((n >> 16) & 255)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+
+
+// =====================================================================
+// 테마별 텍스처
+// =====================================================================
+// 빗줄기 (세로로 긴 하얀 선)
+export function rainTexture() {
+  return canvasTexture(32, 128, (ctx, w, h) => {
+    const g = ctx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, 'rgba(210,225,255,0)');
+    g.addColorStop(0.6, 'rgba(210,225,255,0.55)');
+    g.addColorStop(1, 'rgba(230,240,255,0.9)');
+    ctx.fillStyle = g;
+    ctx.fillRect(w / 2 - 1.5, 0, 3, h);
+  });
+}
+// 낙엽 (흰색으로 그려 정점 색으로 물들임)
+export function leafTexture() {
+  return canvasTexture(64, 64, (ctx, w, h) => {
+    ctx.translate(w / 2, h / 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    for (let i = 0; i < 5; i++) {
+      const a = -Math.PI / 2 + (i / 5) * Math.PI * 2;
+      const a2 = a + Math.PI / 5;
+      ctx.lineTo(Math.cos(a) * 28, Math.sin(a) * 28);
+      ctx.lineTo(Math.cos(a2) * 12, Math.sin(a2) * 12);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 26); ctx.stroke();
+  });
+}
+// 눈꽃 얼음판 (육각 눈꽃 무늬)
+export function snowflakePlateTexture() {
+  return canvasTexture(512, 512, (ctx, w, h) => {
+    const g = ctx.createRadialGradient(w / 2, h / 2, 20, w / 2, h / 2, w / 2);
+    g.addColorStop(0, '#e8f6ff');
+    g.addColorStop(0.7, '#9fd2ee');
+    g.addColorStop(1, '#5d9ec8');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+    ctx.translate(w / 2, h / 2);
+    ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+    ctx.lineCap = 'round';
+    for (let i = 0; i < 6; i++) {
+      ctx.save();
+      ctx.rotate((i / 6) * Math.PI * 2);
+      ctx.lineWidth = 12;
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -210); ctx.stroke();
+      ctx.lineWidth = 8;
+      for (const [y, l] of [[-70, 50], [-125, 62], [-175, 40]]) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(-l, y - l * 0.8); ctx.moveTo(0, y); ctx.lineTo(l, y - l * 0.8); ctx.stroke();
+      }
+      ctx.restore();
+    }
+    ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    ctx.beginPath(); ctx.arc(0, 0, 26, 0, Math.PI * 2); ctx.fill();
+  });
+}
+// 팔괘 (팔각 석단 윗면)
+export function trigramTexture() {
+  return canvasTexture(512, 512, (ctx, w, h) => {
+    const r = rand(717);
+    ctx.fillStyle = '#5b5a5e';
+    ctx.fillRect(0, 0, w, h);
+    grain(ctx, w, h, 5000, r, 0.06, 0.12);
+    ctx.translate(w / 2, h / 2);
+    // 건·태·리·진·손·감·간·곤 (1=양효, 0=음효)
+    const TRI = ['111', '011', '101', '001', '110', '010', '100', '000'];
+    ctx.fillStyle = '#e8d6a0';
+    TRI.forEach((t, i) => {
+      ctx.save();
+      ctx.rotate((i / 8) * Math.PI * 2);
+      for (let k = 0; k < 3; k++) {
+        const y = -200 + k * 22;
+        if (t[k] === '1') ctx.fillRect(-46, y, 92, 13);
+        else { ctx.fillRect(-46, y, 40, 13); ctx.fillRect(6, y, 40, 13); }
+      }
+      ctx.restore();
+    });
+    ctx.strokeStyle = 'rgba(232,214,160,0.6)';
+    ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.arc(0, 0, 140, 0, Math.PI * 2); ctx.stroke();
+  });
+}
+// 부적 (노란 종이에 붉은 글씨)
+export function talismanTexture(text = '勅令') {
+  return canvasTexture(128, 256, (ctx, w, h) => {
+    const r = rand(text.length * 97);
+    ctx.fillStyle = '#e9c94e';
+    ctx.fillRect(0, 0, w, h);
+    grain(ctx, w, h, 900, r, 0.08, 0.06);
+    ctx.strokeStyle = '#b1241a';
+    ctx.lineWidth = 5;
+    ctx.strokeRect(8, 8, w - 16, h - 16);
+    ctx.fillStyle = '#b1241a';
+    ctx.font = `900 46px ${SERIF}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    [...text].forEach((ch, i) => ctx.fillText(ch, w / 2, 56 + i * 52));
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(w / 2, 56 + text.length * 52 - 10);
+    for (let i = 0; i < 6; i++) ctx.lineTo(w / 2 + (i % 2 ? 18 : -18), 56 + text.length * 52 + i * 12);
+    ctx.stroke();
+  });
+}
+// 갈라진 얼음 / 번개 맞은 금 (빛나는 금)
+export function crackTexture(color = '160,220,255') {
+  return canvasTexture(256, 256, (ctx, w, h) => {
+    const r = rand(999);
+    ctx.clearRect(0, 0, w, h);
+    ctx.strokeStyle = `rgba(${color},0.95)`;
+    ctx.lineCap = 'round';
+    for (let k = 0; k < 7; k++) {
+      ctx.lineWidth = 2 + r() * 3;
+      ctx.beginPath();
+      let x = w / 2, y = h / 2;
+      ctx.moveTo(x, y);
+      const a0 = (k / 7) * Math.PI * 2;
+      for (let i = 0; i < 6; i++) {
+        const a = a0 + (r() - 0.5) * 0.8;
+        x += Math.cos(a) * 20; y += Math.sin(a) * 20;
+        ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+  });
+}
+// 바닥에 떨어진 단풍잎들 (알파)
+export function leafLitterTexture() {
+  return canvasTexture(512, 512, (ctx, w, h) => {
+    const r = rand(4242);
+    ctx.clearRect(0, 0, w, h);
+    const cols = ['#b8401c', '#d8661e', '#e0a12a', '#9a2e1c', '#c8862a', '#7a4a1e'];
+    for (let i = 0; i < 260; i++) {
+      const x = r() * w, y = r() * h, s = 6 + r() * 9;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(r() * Math.PI * 2);
+      ctx.fillStyle = cols[Math.floor(r() * cols.length)];
+      ctx.globalAlpha = 0.75 + r() * 0.25;
+      ctx.beginPath();
+      for (let k = 0; k < 5; k++) {
+        const a = (k / 5) * Math.PI * 2;
+        ctx.lineTo(Math.cos(a) * s, Math.sin(a) * s);
+        ctx.lineTo(Math.cos(a + 0.63) * s * 0.45, Math.sin(a + 0.63) * s * 0.45);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+  }, { repeat: [1, 1] });
+}
+// 젖은 흙 / 마른 흙 (색만 다른 흙 마당)
+export function dirtTexture(base = '#5a4a3a', seed = 19) {
+  return canvasTexture(512, 512, (ctx, w, h) => {
+    const r = rand(seed);
+    ctx.fillStyle = base;
+    ctx.fillRect(0, 0, w, h);
+    for (let i = 0; i < 80; i++) {
+      const x = r() * w, y = r() * h, s = 20 + r() * 80;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, s);
+      const c = r() > 0.5 ? '255,255,255' : '0,0,0';
+      g.addColorStop(0, `rgba(${c},0.08)`);
+      g.addColorStop(1, `rgba(${c},0)`);
+      ctx.fillStyle = g;
+      ctx.fillRect(x - s, y - s, s * 2, s * 2);
+    }
+    for (let i = 0; i < 300; i++) {
+      ctx.fillStyle = `rgba(${90 + r() * 60},${80 + r() * 50},${70 + r() * 40},${0.4 + r() * 0.4})`;
+      ctx.beginPath();
+      ctx.ellipse(r() * w, r() * h, 1 + r() * 2.6, 1 + r() * 2, r() * 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    grain(ctx, w, h, 9000, r, 0.05, 0.1);
+  }, { repeat: [1, 1] });
 }
