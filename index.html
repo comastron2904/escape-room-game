@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>한옥마을 방탈출 · 3D</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@500;700;900&display=swap" />
+  <link rel="stylesheet" href="./css/style.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body class="lobby">
+  <div id="stage"></div>
+
+  <header class="hud-top">
+    <div class="event">
+      <p class="event-kicker" id="areaName">눈 내린 한옥마을</p>
+      <h1 id="gameTitle">한옥마을 방탈출</h1>
+      <p class="event-sub">⏱ <span id="timer">00:00</span> · 👣 <span id="fragCount">0</span>/<span id="fragTotal">7</span> · 💡 <span id="hintCount">0</span></p>
+    </div>
+    <div class="hud-actions">
+      <button id="profileChip" class="profile-chip" type="button" hidden>
+        <canvas id="chipAvatar" width="72" height="72"></canvas>
+        <span id="chipName"></span>
+      </button>
+      <button id="notebookBtn" class="hud-btn" type="button" aria-label="수첩"><span>📒</span><em>수첩</em><i id="noteDot" class="dot" hidden></i></button>
+      <button id="hintBtn" class="hud-btn" type="button" aria-label="힌트"><span>💡</span><em>힌트</em></button>
+      <button id="boardBtn" class="hud-btn" type="button" aria-label="순위표"><span>🏆</span><em>순위</em></button>
+      <button id="menuBtn" class="hud-btn" type="button" aria-label="메뉴"><span>☰</span><em>메뉴</em></button>
+    </div>
+  </header>
+
+  <!-- 소지품 -->
+  <div id="inventory" class="inventory" aria-label="소지품"></div>
+
+  <button id="runBtn" class="run-btn" type="button" aria-pressed="false">
+    <span class="run-icon" aria-hidden="true">🏃</span><span class="run-label">달리기</span>
+  </button>
+
+  <div class="hint" id="hint">
+    <span class="hint-desktop"><kbd>WASD</kbd>/<kbd>←↑↓→</kbd> 이동 · <kbd>Shift</kbd> 달리기 · 클릭으로 이동 · <kbd>E</kbd>/<kbd>Space</kbd> 조사 · 휠로 확대/축소</span>
+    <span class="hint-mobile">터치로 이동 · 누른 채 끌면 따라가기 · 두 번 탭하면 달리기 · 두 손가락으로 확대/축소</span>
+  </div>
+
+  <!-- 가까이 갔을 때 -->
+  <section id="nearCard" class="near-card" aria-live="polite" hidden>
+    <div class="near-body">
+      <p class="near-meta" id="nearMeta">조사하기</p>
+      <h2 id="nearTitle"></h2>
+    </div>
+    <button id="actBtn" class="btn btn-gold" type="button"><span id="actLabel">살펴보기</span> <kbd class="kbd-in">E</kbd></button>
+  </section>
+
+  <!-- 공용 팝업 -->
+  <div id="modal" class="modal" hidden>
+    <div class="modal-card paper" id="modalCard" role="dialog" aria-modal="true"></div>
+  </div>
+
+  <!-- 시작 화면: 구성 코드 + 이름 -->
+  <div id="start" class="start" hidden>
+    <div class="start-card paper">
+      <p class="event-kicker">3D 방탈출</p>
+      <h1 class="start-title">눈 내린 한옥마을</h1>
+      <p class="muted">선생님이 알려 준 구성 코드와 이름을 입력하세요.</p>
+      <div class="avatar-stage" id="startStage"><canvas width="320" height="320"></canvas></div>
+      <form id="startForm" autocomplete="off">
+        <label class="fld"><span>구성 코드</span><input id="codeInput" maxlength="12" placeholder="예: K7P2QX" autocapitalize="characters" spellcheck="false" /></label>
+        <label class="fld"><span>이름 (순위표에 표시)</span><input id="nameInput" maxlength="12" placeholder="최대 12자" /></label>
+        <div class="row">
+          <button id="rerollBtn" class="btn btn-ghost" type="button">🎲 캐릭터</button>
+          <button class="btn btn-gold" type="submit">시작하기</button>
+        </div>
+      </form>
+      <div id="continueBox" class="continue" hidden>
+        <p class="muted" id="continueInfo"></p>
+        <button id="continueBtn" class="btn btn-ghost" type="button">▶ 이어하기</button>
+      </div>
+      <p class="err" id="startErr"></p>
+      <p class="muted tiny">코드가 없나요? <button id="demoBtn" type="button" class="linkish">체험판(DEMO)으로 해보기</button> · <a href="./edit" class="linkish">선생님용 편집 모드</a></p>
+    </div>
+  </div>
+
+  <div class="preview-banner">👀 미리보기 모드 — 기록이 저장되지 않아요</div>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <div id="fade" class="fade"></div>
+
+  <div id="loading" class="loading">
+    <div class="reel"></div>
+    <p id="loadingText">불러오는 중…</p>
+  </div>
+
+  <script type="module" src="./js/main.js" onerror="document.getElementById('loadingText').textContent='게임 파일 일부를 불러오지 못했어요. js 폴더가 모두 올라갔는지 확인해 주세요.'"></script>
+</body>
+</html>

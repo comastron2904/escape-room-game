@@ -1,0 +1,86 @@
+// 서버 공용 도구 (Vercel 서버리스 함수)
+// Supabase 는 서버에서만 service_role 키로 접근합니다. (브라우저에는 키가 나가지 않음)
+import { scryptSync, randomBytes, timingSafeEqual } from 'node:crypto';
+
+export class HttpError extends Error {
+  constructor(status, message) { super(message); this.status = status; }
+}
+
+function env() {
+  const url = (process.env.SUPABASE_URL || '').trim().replace(/\/+$/, '');
+  const key = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || '').trim();
+  if (!url || !key) throw new HttpError(500, '서버 설정이 끝나지 않았어요. (Vercel 환경변수 SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY 확인)');
+  return { url, key };
+}
+
+// PostgREST 호출
+export async function rest(path, { method = 'GET', body, prefer, count = false } = {}) {
+  const { url, key } = env();
+  const headers = { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };
+  const pref = [prefer, count ? 'count=exact' : null].filter(Boolean).join(',');
+  if (pref) headers.Prefer = pref;
+  const r = await fetch(`${url}/rest/v1/${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  const text = await r.text();
+  if (!r.ok) {
+    console.error('[supabase]', r.status, text);
+    throw new HttpError(502, '데이터베이스 요청에 실패했어요. 잠시 후 다시 시도해 주세요.');
+  }
+  const data = text ? JSON.parse(text) : null;
+  if (count) {
+    const m = /\/(\d+)$/.exec(r.headers.get('content-range') || '');
+    return { data, count: m ? Number(m[1]) : 0 };
+  }
+  return data;
+}
+export const enc = encodeURIComponent;
+
+export async function getOne(table, filter, select = '*') {
+  const rows = await rest(`${table}?${filter}&select=${select}&limit=1`);
+  return rows?.[0] || null;
+}
+
+// 비밀번호 (scrypt)
+export function hashPassword(pw) {
+  const salt = randomBytes(16).toString('hex');
+  const hash = scryptSync(String(pw), salt, 32).toString('hex');
+  return `${salt}:${hash}`;
+}
+export function verifyPassword(pw, stored) {
+  const [salt, hash] = String(stored || '').split(':');
+  if (!salt || !hash) return false;
+  const a = Buffer.from(hash, 'hex');
+  const b = scryptSync(String(pw), salt, 32);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+export function newCode(len = 6) {
+  const bytes = randomBytes(len);
+  let s = '';
+  for (let i = 0; i < len; i++) s += CODE_CHARS[bytes[i] % CODE_CHARS.length];
+  return s;
+}
+export const cleanCode = (c) => String(c || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12);
+export const cleanName = (n) => String(n || '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 12);
+export const isUuid = (s) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(s || ''));
+
+// 공통 처리기: POST JSON { action, ... }
+export function handler(actions) {
+  return async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    if (req.method !== 'POST') return res.status(405).json({ error: 'POST 로 요청해 주세요.' });
+    let body = req.body;
+    if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = {}; } }
+    body = body || {};
+    const fn = actions[body.action];
+    if (!fn) return res.status(400).json({ error: '알 수 없는 요청이에요.' });
+    try {
+      const out = await fn(body, req);
+      return res.status(200).json(out ?? { ok: true });
+    } catch (e) {
+      const status = e instanceof HttpError ? e.status : 500;
+      if (status >= 500) console.error(e);
+      return res.status(status).json({ error: e.message || '서버 오류' });
+    }
+  };
+}

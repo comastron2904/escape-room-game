@@ -1,0 +1,40 @@
+-- 한옥마을 방탈출 — Supabase 테이블
+-- Supabase 대시보드 > SQL Editor 에 통째로 붙여 넣고 Run 하세요. (여러 번 실행해도 안전)
+
+create extension if not exists pgcrypto;
+
+-- 교사가 만든 구성 (이야기 + 교과 문제 7개)
+create table if not exists public.configs (
+  code        text primary key,
+  title       text not null,
+  story       text not null,
+  puzzles     jsonb not null,          -- [{ q, image, type: 'number'|'direction', answer, hint }]
+  final_seq   text not null,           -- 마지막 석단 퍼즐 정답 (예: NESWNEW)
+  edit_hash   text not null,           -- 편집 비밀번호 (scrypt)
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+
+-- 학생 한 명의 한 판 (시작 시각은 서버가 기록)
+create table if not exists public.sessions (
+  id          uuid primary key default gen_random_uuid(),
+  code        text not null references public.configs(code) on delete cascade,
+  nickname    text not null,
+  started_at  timestamptz not null default now(),
+  solved      int[] not null default '{}',
+  hint_keys   text[] not null default '{}',
+  wrong       int not null default 0,
+  finished_at timestamptz,
+  elapsed_ms  bigint,
+  hints       int,
+  score_ms    bigint
+);
+create index if not exists sessions_board_idx on public.sessions (code, score_ms) where finished_at is not null;
+create index if not exists sessions_code_idx on public.sessions (code);
+
+-- 보안: 브라우저(anon)에서는 아무것도 직접 읽고 쓸 수 없게 막고,
+-- Vercel 서버 함수(service_role 키)만 접근합니다. (정답이 학생에게 노출되지 않음)
+alter table public.configs enable row level security;
+alter table public.sessions enable row level security;
+revoke all on public.configs from anon, authenticated;
+revoke all on public.sessions from anon, authenticated;

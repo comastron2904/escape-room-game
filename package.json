@@ -1,0 +1,11 @@
+{
+  "name": "hanok-escape",
+  "private": true,
+  "version": "2.0.0",
+  "description": "눈 내린 한옥마을 3D 방탈출 — 교사가 교과 문제를 넣어 만드는 교실용 게임",
+  "type": "module",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "dev": "vercel dev"
+  }
+}
