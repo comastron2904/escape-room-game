@@ -125,10 +125,11 @@ function uiFragment({ order, text, count, total }) {
 }
 
 // ---- 숫자 / 방향 입력 공용 부품 ----
-function answerInput(type, len) {
+const NUM_HANJA = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
+function answerInput(type, len, { numbered = false } = {}) {
   if (type === 'direction') {
     return `<div class="dir-wrap">
-      <div class="seq-slots" data-slots>${new Array(len).fill(0).map(() => '<div class="seq-slot"></div>').join('')}</div>
+      <div class="seq-slots${numbered ? ' numbered' : ''}" data-slots>${new Array(len).fill(0).map((_, i) => `<div class="seq-slot" data-n="${numbered ? NUM_HANJA[i] : ''}"></div>`).join('')}</div>
       <div class="compass">
         <span></span><button type="button" class="dir-btn" data-dir="N"><b>北</b>북 ↑</button><span></span>
         <button type="button" class="dir-btn" data-dir="W"><b>西</b>서 ←</button><button type="button" class="dir-btn back" data-back>⌫</button><button type="button" class="dir-btn" data-dir="E"><b>東</b>동 →</button>
@@ -148,7 +149,8 @@ function bindAnswerInput(root, type, len, onChange) {
       root.querySelectorAll('[data-slots] .seq-slot').forEach((s, i) => {
         const d = value[i];
         s.classList.toggle('filled', !!d);
-        s.innerHTML = d ? `<b>${DIRS[d].hanja}</b>` : '';
+        s.classList.toggle('next', i === value.length);
+        s.innerHTML = d ? `<b>${DIRS[d].hanja}</b>` : s.dataset.n ? `<i>${s.dataset.n}</i>` : '';
       });
     } else root.querySelector('[data-display]').textContent = value || ' ';
     onChange?.(type === 'direction' ? value.join('') : value);
@@ -235,9 +237,9 @@ function uiPuzzle({ index, spot, intro, puzzle, solved, fragment, submit }) {
 function uiFinal({ length, fragments, onPress, submit }) {
   let input = null, busy = false;
   const p = openModal(`${head('🪨', '방위 석단', '마지막 퍼즐 · 일곱 걸음')}
-    <p class="m-desc">모은 조각에 적힌 <b>차례</b>와 <b>방위</b>대로 석단의 돌을 누르세요.</p>
+    <p class="m-desc">조각 번호 〔一〕부터 〔七〕까지 차례대로, 조각에 적힌 <b>방위</b>의 돌을 누르세요. 아래 칸의 번호가 조각 번호예요.</p>
     <div class="frag-list">${fragments.map((f) => `<div>${esc(f)}</div>`).join('')}</div>
-    ${answerInput('direction', length)}
+    ${answerInput('direction', length, { numbered: true })}
     <p class="err" data-err></p>
     <div class="m-actions"><button class="btn btn-ghost" data-close type="button">그만두기</button><button class="btn btn-gold" data-ok type="button" disabled>밟기</button></div>`, {
     wide: true,
@@ -307,7 +309,7 @@ function openNotebook(tab = 'frags') {
   $('noteDot').hidden = true;
   let list = '';
   if (tab === 'frags') {
-    const frags = state.solved.map((i) => ({ i, t: fragmentText(story, i + 1, state.fragments[i]) }));
+    const frags = [...state.solved].sort((a, b) => a - b).map((i) => ({ i, t: fragmentText(story, i + 1, state.fragments[i]) }));
     list = frags.length
       ? frags.map((f) => `<div class="note"><h3>👣 ${esc(f.t)}</h3><p class="m-from">${f.i + 1}번 문제에서 얻음</p></div>`).join('')
       : '<p class="muted">아직 모은 조각이 없어요. 문제를 풀면 조각을 얻어요.</p>';

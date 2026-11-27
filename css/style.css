@@ -411,3 +411,5 @@ body.preview-mode .preview-banner { display: block; position: fixed; top: 0; lef
   .q-text { font-size: 15px; }
   .board .ht, .board th:nth-child(4) { display: none; }
 }
+.seq-slot i { font-style: normal; font-family: var(--serif); font-size: 15px; color: var(--ink-2); opacity: .45; }
+.seq-slots.numbered .seq-slot.next { border-color: var(--red); border-style: solid; box-shadow: 0 0 0 3px rgba(184,53,44,.15); }

@@ -164,7 +164,8 @@ export function createGame({ state, ui, world, save, backend, config, story }) {
     if (state.solved.length < config.puzzles.length) {
       return ui.text({ ...FLAVOR.altar_empty, text: `${FLAVOR.altar_empty.text}\n\n지금까지 모은 조각: ${state.solved.length} / ${config.puzzles.length}` });
     }
-    const frags = state.solved.map((i) => fragmentText(story, i + 1, state.fragments[i]));
+    // 얻은 순서가 아니라 조각 번호(一~七) 순서로 보여 줌
+    const frags = [...state.solved].sort((a, b) => a - b).map((i) => fragmentText(story, i + 1, state.fragments[i]));
     const seq = await ui.finalPuzzle({
       length: config.puzzles.length, fragments: frags, story,
       onPress: (d) => world.fx('altarPress', d),
