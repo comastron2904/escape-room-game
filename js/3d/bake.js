@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
-const KEEP = ['position', 'normal', 'uv'];
+const KEEP = ['position', 'normal', 'uv', 'color'];
 
 function isExcluded(obj, exclude) {
   for (let o = obj; o; o = o.parent) if (exclude.has(o)) return true;

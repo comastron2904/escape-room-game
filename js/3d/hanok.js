@@ -2,11 +2,12 @@
 // 모든 함수는 바닥 중앙(0,0,0)을 기준으로 만들고 { group, size:{w,d} } 를 돌려줍니다.
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
   roofTileTexture, thatchTexture, plasterTexture, latticeTexture, woodTexture, floorBoardTexture, jangpanTexture,
   stoneWallTexture, graniteTexture, waterTexture, textBoardTexture, jangseungTexture, dancheongTexture,
   yutBoardTexture, plantPanelTexture, najeonTexture, glowTexture, rand,
-  snowTexture, snowyRoofTexture, iceTexture, slateTexture,
+  snowTexture, snowyRoofTexture, iceTexture, slateTexture, foliageTexture,
 } from './textures.js';
 
 const std = (o) => new THREE.MeshStandardMaterial(o);
@@ -42,6 +43,13 @@ export function createMaterials() {
     bush: std({ color: 0x3f6a32, roughness: 0.9, flatShading: true }),
     bushLight: std({ color: 0x5b8a3c, roughness: 0.9, flatShading: true }),
     leaf: std({ color: 0x4f7a34, roughness: 0.85, flatShading: true }),
+    // 수풀: 눈 덮인 잎 덩어리(정점 색) + 잎 카드(알파)
+    blob: std({ vertexColors: true, roughness: 0.92 }),
+    shrubCard: std({ map: foliageTexture('shrub', 1), alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.85 }),
+    shrubCard2: std({ map: foliageTexture('shrub', 2), alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.85 }),
+    needleCard: std({ map: foliageTexture('needle', 3), alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.85 }),
+    twigCard: std({ map: foliageTexture('twig', 4), alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.9 }),
+    grassCard: std({ map: foliageTexture('grass', 5), alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.95 }),
     trunk: std({ color: 0x5a4030, roughness: 1 }),
     pineTrunk: std({ color: 0x7a4a32, roughness: 1 }),
     persimmon: std({ color: 0xe8741e, roughness: 0.45, emissive: 0x401800, emissiveIntensity: 0.3 }),
@@ -338,6 +346,52 @@ export function buildGate(M, width = 3.2) {
 // =====================================================================
 // 나무 / 풀숲
 // =====================================================================
+// 울퉁불퉁한 잎 덩어리 (위쪽은 눈, 아래는 잎 색) — 정점을 공유해 매끈하게
+const _gc = new THREE.Color(), _sc = new THREE.Color(0xf2f5fa);
+function hash3(x, y, z, seed) {
+  const v = Math.sin(x * 127.1 + y * 311.7 + z * 74.7 + seed * 19.19) * 43758.5453;
+  return v - Math.floor(v);
+}
+export function blobGeometry(radius, seed, { squash = 0.8, green = 0x3b5e2f, snow = 0.42, rough = 0.28, detail = 2 } = {}) {
+  let geo = new THREE.IcosahedronGeometry(radius, detail);
+  geo.deleteAttribute('normal');
+  geo.deleteAttribute('uv');
+  geo = mergeVertices(geo);
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    const n = hash3(Math.round(x * 50), Math.round(y * 50), Math.round(z * 50), seed);
+    const n2 = hash3(Math.round(x * 9), Math.round(y * 9), Math.round(z * 9), seed + 3);
+    const k = 1 + (n - 0.5) * rough + (n2 - 0.5) * rough * 1.2;
+    pos.setXYZ(i, x * k, y * k * squash, z * k);
+  }
+  geo.computeVertexNormals();
+  const nor = geo.attributes.normal;
+  const col = new Float32Array(pos.count * 3);
+  const base = new THREE.Color(green);
+  for (let i = 0; i < pos.count; i++) {
+    const ny = nor.getY(i);
+    const v = hash3(i, seed, 7, 1);
+    _gc.copy(base).offsetHSL((v - 0.5) * 0.03, 0, (v - 0.5) * 0.12);
+    const t = Math.min(1, Math.max(0, (ny - snow + (v - 0.5) * 0.35) / 0.25));
+    _gc.lerp(_sc, t);
+    if (pos.getY(i) < -radius * 0.45 * squash) _gc.multiplyScalar(0.7); // 아래쪽 그늘
+    col[i * 3] = _gc.r; col[i * 3 + 1] = _gc.g; col[i * 3 + 2] = _gc.b;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(pos.count * 2), 2));
+  return geo;
+}
+
+// 잎 카드 (바닥 기준)
+function card(M, mat, parent, w, h, x, y, z, ry, tilt = 0) {
+  const geo = new THREE.PlaneGeometry(w, h);
+  geo.translate(0, h / 2, 0);
+  const m = mesh(geo, mat, parent, x, y, z, { cast: true, receive: true });
+  m.rotation.set(tilt, ry, 0, 'YXZ');
+  return m;
+}
+
 export function buildPine(M, scale = 1, seed = 1) {
   const g = new THREE.Group();
   const r = rand(seed * 977 + 3);
@@ -348,20 +402,25 @@ export function buildPine(M, scale = 1, seed = 1) {
     const t = i / 5;
     pts.push(new THREE.Vector3(Math.sin(t * 2.4 + seed) * 0.25 * scale + lean * t * h, t * h, Math.cos(t * 1.7 + seed) * 0.15 * scale));
   }
-  mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 12, 0.16 * scale, 7), M.pineTrunk, g);
-  const top = pts[pts.length - 1];
+  const curve = new THREE.CatmullRomCurve3(pts);
+  mesh(new THREE.TubeGeometry(curve, 12, 0.16 * scale, 7), M.pineTrunk, g);
   const layers = 4;
   for (let i = 0; i < layers; i++) {
     const t = 0.55 + (i / layers) * 0.5;
-    const p = new THREE.CatmullRomCurve3(pts).getPoint(Math.min(1, t));
-    const rad = (1.6 - i * 0.28) * scale;
-    const cx = p.x + (r() - 0.5) * 0.6 * scale, cz = p.z + (r() - 0.5) * 0.6 * scale;
-    const cloud = mesh(new THREE.IcosahedronGeometry(rad, 1), i % 2 ? M.pineLight : M.pine, g, cx, p.y + 0.2, cz);
-    cloud.scale.set(1.25, 0.42, 1.05);
-    const cap = mesh(new THREE.IcosahedronGeometry(rad * 0.92, 1), M.snow, g, cx, p.y + 0.2 + rad * 0.2, cz);
-    cap.scale.set(1.18, 0.26, 0.98);
+    const p = curve.getPoint(Math.min(1, t));
+    const rad = (1.5 - i * 0.26) * scale;
+    const cx = p.x + (r() - 0.5) * 0.5 * scale, cz = p.z + (r() - 0.5) * 0.5 * scale;
+    // 납작한 솔잎 구름
+    const cloud = mesh(blobGeometry(rad, seed * 10 + i, { squash: 0.38, green: i % 2 ? 0x2f5230 : 0x284628, snow: 0.35, rough: 0.35 }), M.blob, g, cx, p.y + 0.15, cz);
+    cloud.scale.set(1.2, 1, 1.0);
+    // 가장자리로 삐져나온 솔잎 가지 카드
+    const n = 6;
+    for (let k = 0; k < n; k++) {
+      const a = (k / n) * Math.PI * 2 + r() * 0.6;
+      const ex = cx + Math.cos(a) * rad * 0.95, ez = cz + Math.sin(a) * rad * 0.8;
+      card(M, M.needleCard, g, rad * 0.95, rad * 0.55, ex, p.y - rad * 0.22, ez, -a + Math.PI / 2, 0.25);
+    }
   }
-  void top;
   return { group: g, size: { w: 0.5 * scale, d: 0.5 * scale } };
 }
 
@@ -392,23 +451,41 @@ export function buildPersimmonTree(M, scale = 1) {
   return { group: g, size: { w: 0.6 * scale, d: 0.6 * scale }, fruits };
 }
 
-export function buildBush(M, seed = 1, scale = 1) {
+// 겨울 수풀: 눈 덮인 상록 관목(회양목·사철나무) 또는 잎 진 관목
+export function buildBush(M, seed = 1, scale = 1, kind = null) {
   const g = new THREE.Group();
   const inner = new THREE.Group(); // 흔들림용
   g.add(inner);
   const r = rand(seed * 131 + 9);
-  const n = 4 + Math.floor(r() * 3);
-  for (let i = 0; i < n; i++) {
-    const a = (i / n) * Math.PI * 2 + r();
-    const rr = (0.25 + r() * 0.35) * scale;
-    const s = (0.45 + r() * 0.3) * scale;
-    const b = mesh(new THREE.IcosahedronGeometry(s, 1), r() > 0.45 ? M.bush : M.bushLight, inner, Math.cos(a) * rr, s * 0.8, Math.sin(a) * rr);
-    b.scale.y = 0.85;
+  const type = kind || (r() < 0.72 ? 'evergreen' : 'bare');
+  if (type === 'evergreen') {
+    const n = 2 + Math.floor(r() * 2);
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + r();
+      const rr = i === 0 ? 0 : (0.3 + r() * 0.2) * scale;
+      const s = (i === 0 ? 0.6 : 0.42 + r() * 0.15) * scale;
+      mesh(blobGeometry(s, seed * 7 + i, { squash: 0.8, green: r() < 0.5 ? 0x34552b : 0x2e4d2a, snow: 0.45 }), M.blob, inner, Math.cos(a) * rr, s * 0.75, Math.sin(a) * rr);
+    }
+    // 잎 카드: 덩어리 테두리를 보송보송하게
+    for (let k = 0; k < 5; k++) {
+      const a = (k / 5) * Math.PI + r() * 0.4;
+      card(M, k % 2 ? M.shrubCard : M.shrubCard2, inner, 1.35 * scale, 1.15 * scale, (r() - 0.5) * 0.2 * scale, -0.05, (r() - 0.5) * 0.2 * scale, a, (r() - 0.5) * 0.25);
+    }
+  } else {
+    for (let k = 0; k < 3; k++) card(M, M.twigCard, inner, 1.5 * scale, 1.5 * scale, 0, 0, 0, (k / 3) * Math.PI + r() * 0.3);
+    const mound = mesh(blobGeometry(0.45 * scale, seed + 50, { squash: 0.35, green: 0xe8edf3, snow: -1, rough: 0.2, detail: 1 }), M.blob, inner, 0, 0.02, 0);
+    void mound;
   }
-  mesh(new THREE.IcosahedronGeometry(0.55 * scale, 1), M.bush, inner, 0, 0.7 * scale, 0);
-  const cap = mesh(new THREE.IcosahedronGeometry(0.75 * scale, 1), M.snow, inner, 0, 0.95 * scale, 0);
-  cap.scale.set(1.15, 0.45, 1.15);
   return { group: g, inner, size: { w: 1.3 * scale, d: 1.3 * scale } };
+}
+
+// 마른 풀 · 억새 덤불 (지나갈 수 있음)
+export function buildGrassTuft(M, seed = 1, scale = 1) {
+  const g = new THREE.Group();
+  const r = rand(seed * 59 + 11);
+  for (let k = 0; k < 3; k++) card(M, M.grassCard, g, 0.9 * scale, (0.7 + r() * 0.4) * scale, (r() - 0.5) * 0.15, 0, (r() - 0.5) * 0.15, (k / 3) * Math.PI + r() * 0.4, (r() - 0.5) * 0.15);
+  mesh(blobGeometry(0.28 * scale, seed + 90, { squash: 0.3, green: 0xeef2f7, snow: -1, rough: 0.2, detail: 1 }), M.blob, g, 0, 0.01, 0);
+  return { group: g, size: { w: 0.6 * scale, d: 0.6 * scale } };
 }
 
 // =====================================================================

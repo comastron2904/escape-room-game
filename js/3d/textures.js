@@ -744,3 +744,71 @@ export function snowflakeTexture() {
 export function slateTexture(lines) {
   return textBoardTexture(lines, { w: 256, h: 192, bg: '#2c3a33', fg: '#f4f1e6', border: '#7a5232', size: 44, font: SERIF, weight: 700 });
 }
+
+// ================= 수풀 (알파 카드) =================
+// kind: 'shrub' 상록 관목 잎 · 'needle' 솔잎 · 'twig' 잎 진 가지 · 'grass' 마른 풀(억새)
+// 카드 위쪽일수록 눈이 얹힌 것처럼 그립니다.
+export function foliageTexture(kind, seed = 1) {
+  return canvasTexture(256, 256, (ctx, w, h) => {
+    const r = rand(seed * 7919 + kind.length * 31);
+    ctx.clearRect(0, 0, w, h);
+    const snowAt = (y) => r() < Math.max(0, 0.55 - y / h) * 1.2; // 위쪽에 눈
+    if (kind === 'shrub') {
+      // 가운데가 빽빽한 둥근 잎 덩어리
+      for (let i = 0; i < 520; i++) {
+        const a = r() * Math.PI * 2, rr = Math.sqrt(r()) * w * 0.46;
+        const x = w / 2 + Math.cos(a) * rr, y = h * 0.55 + Math.sin(a) * rr * 0.85;
+        if (y < 6 || y > h - 4) continue;
+        const g = 55 + r() * 70;
+        ctx.fillStyle = snowAt(y) && r() < 0.5 ? `rgb(${236 + r() * 15},${240 + r() * 12},${248})` : `rgb(${g * 0.45},${g},${g * 0.4})`;
+        ctx.beginPath();
+        ctx.ellipse(x, y, 4 + r() * 5, 2.5 + r() * 3, r() * Math.PI, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else if (kind === 'needle') {
+      // 아래로 처진 솔잎 가지 여러 개
+      for (let b = 0; b < 7; b++) {
+        const x0 = w * (0.1 + r() * 0.8), y0 = h * (0.1 + r() * 0.6);
+        const len = 50 + r() * 70, dir = r() > 0.5 ? 1 : -1;
+        ctx.strokeStyle = 'rgba(70,45,25,0.9)';
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x0 + dir * len, y0 + len * 0.25); ctx.stroke();
+        for (let k = 0; k < 60; k++) {
+          const t = r();
+          const px = x0 + dir * len * t, py = y0 + len * 0.25 * t;
+          const a = (r() - 0.5) * 2.4 + Math.PI / 2;
+          const l = 7 + r() * 9;
+          const snow = py < h * 0.45 && r() < 0.35;
+          ctx.strokeStyle = snow ? 'rgba(245,248,252,0.95)' : `rgba(${30 + r() * 25},${70 + r() * 40},${35 + r() * 20},0.95)`;
+          ctx.lineWidth = snow ? 2.4 : 1.3;
+          ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + Math.cos(a) * l, py + Math.sin(a) * l); ctx.stroke();
+        }
+      }
+    } else if (kind === 'twig') {
+      // 잎 진 관목 가지 (아래에서 위로 갈라짐)
+      const branch = (x, y, ang, len, wd, depth) => {
+        const x2 = x + Math.cos(ang) * len, y2 = y + Math.sin(ang) * len;
+        ctx.strokeStyle = `rgba(${80 + r() * 30},${55 + r() * 20},${40},1)`;
+        ctx.lineWidth = wd;
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x2, y2); ctx.stroke();
+        if (y2 < h * 0.5 && r() < 0.6) { ctx.strokeStyle = 'rgba(248,250,253,0.95)'; ctx.lineWidth = wd + 1.2; ctx.beginPath(); ctx.moveTo(x + 1, y - 1.5); ctx.lineTo(x2 + 1, y2 - 1.5); ctx.stroke(); }
+        if (depth > 0) for (let k = 0; k < 2; k++) branch(x2, y2, ang + (r() - 0.5) * 1.1, len * (0.6 + r() * 0.2), Math.max(1, wd * 0.65), depth - 1);
+      };
+      for (let i = 0; i < 4; i++) branch(w / 2 + (r() - 0.5) * 30, h, -Math.PI / 2 + (r() - 0.5) * 0.8, 60 + r() * 25, 4, 4);
+    } else {
+      // 마른 풀 + 억새 이삭
+      for (let i = 0; i < 70; i++) {
+        const x = w * (0.15 + r() * 0.7), top = h * (0.08 + r() * 0.45);
+        const bend = (r() - 0.5) * 50;
+        const c = 150 + r() * 60;
+        ctx.strokeStyle = `rgba(${c},${c * 0.8},${c * 0.5},0.95)`;
+        ctx.lineWidth = 1 + r() * 1.5;
+        ctx.beginPath(); ctx.moveTo(x, h); ctx.quadraticCurveTo(x, (h + top) / 2, x + bend, top); ctx.stroke();
+        if (r() < 0.25) {
+          ctx.fillStyle = 'rgba(235,225,205,0.9)';
+          for (let k = 0; k < 14; k++) { ctx.beginPath(); ctx.ellipse(x + bend + (r() - 0.5) * 6, top + k * 2.5, 3, 1.2, 0.4, 0, Math.PI * 2); ctx.fill(); }
+        }
+      }
+    }
+  });
+}

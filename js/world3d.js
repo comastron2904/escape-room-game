@@ -65,7 +65,7 @@ class Area {
     this.inters.push(it);
     return it;
   }
-  toWorld(x, z, y = 0) { return new THREE.Vector3(this.ox + x, y, (this.oz || 0) + z); }
+  toWorld(x, z, y = 0, out = new THREE.Vector3()) { return out.set(this.ox + x, y, (this.oz || 0) + z); }
 }
 
 // 가려지면 반투명해지는 물체 (집·나무): 재질을 따로 복제한 뒤 미리 합쳐 둠
@@ -108,7 +108,8 @@ export async function createWorld(canvas, options) {
   let lookToken = 0;
 
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-  let pixelRatio = Math.min(window.devicePixelRatio || 1, isTouch ? 1.25 : 1.5);
+  const MAX_PR = Math.min(window.devicePixelRatio || 1, isTouch ? 1.25 : 1.5);
+  let pixelRatio = MAX_PR;
   renderer.setPixelRatio(pixelRatio);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -174,34 +175,43 @@ export async function createWorld(canvas, options) {
     for (const f of a.fadeables) f.box = new THREE.Box3().setFromObject(f.item.group);
   }
 
-  // 눈 내림 (마을에서만, 카메라 주변 상자 안에서 반복)
-  const SNOW_N = isTouch ? 900 : 1800;
-  const SNOW_BOX = { w: 34, h: 16, d: 34 };
+  // 눈 내림 (마을에서만) — 위치 계산을 GPU 셰이더에서 해서 CPU 부담 없음
+  const SNOW_N = isTouch ? 1000 : 2200;
+  const SNOW_BOX = { w: 36, h: 16, d: 36 };
   const snowPos = new Float32Array(SNOW_N * 3);
-  const snowVel = new Float32Array(SNOW_N);
+  const snowSpd = new Float32Array(SNOW_N);
   for (let i = 0; i < SNOW_N; i++) {
-    snowPos[i * 3] = (Math.random() - 0.5) * SNOW_BOX.w;
+    snowPos[i * 3] = Math.random() * SNOW_BOX.w;
     snowPos[i * 3 + 1] = Math.random() * SNOW_BOX.h;
-    snowPos[i * 3 + 2] = (Math.random() - 0.5) * SNOW_BOX.d;
-    snowVel[i] = 0.7 + Math.random() * 0.8;
+    snowPos[i * 3 + 2] = Math.random() * SNOW_BOX.d;
+    snowSpd[i] = 0.6 + Math.random() * 0.9;
   }
   const snowGeo = new THREE.BufferGeometry();
   snowGeo.setAttribute('position', new THREE.BufferAttribute(snowPos, 3));
-  const snowPts = new THREE.Points(snowGeo, new THREE.PointsMaterial({ map: snowflakeTexture(), size: 0.16, transparent: true, depthWrite: false, opacity: 0.95, sizeAttenuation: true }));
+  snowGeo.setAttribute('aSpeed', new THREE.BufferAttribute(snowSpd, 1));
+  const snowMat = new THREE.PointsMaterial({ map: snowflakeTexture(), size: 0.16, transparent: true, depthWrite: false, opacity: 0.95, sizeAttenuation: true });
+  const snowU = { uTime: { value: 0 }, uCam: { value: new THREE.Vector3() }, uBox: { value: new THREE.Vector3(SNOW_BOX.w, SNOW_BOX.h, SNOW_BOX.d) } };
+  snowMat.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, snowU);
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform vec3 uCam;\nuniform vec3 uBox;\nattribute float aSpeed;')
+      .replace('#include <begin_vertex>', `
+        vec3 transformed = position;
+        transformed.y = mod(position.y - uTime * aSpeed, uBox.y);
+        float sway = sin(uTime * 0.7 + position.x * 3.1) * 0.35;
+        // 카메라 주변 상자 안에서 월드 좌표 기준으로 반복 (걸어도 눈이 따라오지 않음)
+        transformed.x = mod(position.x + sway - uCam.x + uBox.x * 0.5, uBox.x) - uBox.x * 0.5 + uCam.x;
+        transformed.z = mod(position.z - uCam.z + uBox.z * 0.5, uBox.z) - uBox.z * 0.5 + uCam.z;`);
+  };
+  const snowPts = new THREE.Points(snowGeo, snowMat);
   snowPts.frustumCulled = false;
   snowPts.renderOrder = 6;
   scene.add(snowPts);
   function updateSnow(dt, t) {
     snowPts.visible = !!area.env.snow;
     if (!snowPts.visible) return;
-    snowPts.position.set(camTarget.x, 0, camTarget.z);
-    for (let i = 0; i < SNOW_N; i++) {
-      let y = snowPos[i * 3 + 1] - snowVel[i] * dt;
-      if (y < 0) y += SNOW_BOX.h;
-      snowPos[i * 3 + 1] = y;
-      snowPos[i * 3] += Math.sin(t * 0.7 + i) * dt * 0.25;
-    }
-    snowGeo.attributes.position.needsUpdate = true;
+    snowU.uTime.value = t;
+    snowU.uCam.value.set(camTarget.x, 0, camTarget.z);
   }
 
   // 반짝이 표시
@@ -266,7 +276,8 @@ export async function createWorld(canvas, options) {
   composer.addPass(new RenderPass(scene, camera));
   const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.3, 0.45, 1.6);
   composer.addPass(bloom);
-  if (isTouch) bloom.enabled = false;
+  let bloomAllowed = !isTouch;
+  bloom.enabled = bloomAllowed;
   composer.addPass(new OutputPass());
 
   function resize() {
@@ -291,6 +302,7 @@ export async function createWorld(canvas, options) {
     renderer.toneMappingExposure = e.exposure ?? 1;
     scene.environmentIntensity = e.envI ?? 0.25;
     bloom.strength = e.bloom ?? 0.3;
+    bloom.enabled = bloomAllowed && (e.bloom ?? 0.3) >= 0.3;
     lamp.intensity = e.lamp?.intensity ?? 0;
     if (e.lamp?.color) lamp.color.set(e.lamp.color);
     if (e.lamp?.distance) lamp.distance = e.lamp.distance;
@@ -389,7 +401,12 @@ export async function createWorld(canvas, options) {
     path = p && p.length ? p : null;
     stuck = 0;
   }
-  const visibleInter = (it) => !!options.game?.labelFor(it.id);
+  const visCache = new Map();
+  let visT = 1;
+  const visibleInter = (it) => {
+    if (!visCache.has(it.id)) visCache.set(it.id, !!options.game?.labelFor(it.id));
+    return visCache.get(it.id);
+  };
   function pickAt(clientX, clientY) {
     const rect = canvas.getBoundingClientRect();
     ndc.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
@@ -608,6 +625,7 @@ export async function createWorld(canvas, options) {
   const chest = new THREE.Vector3();
   const ray = new THREE.Ray();
   const tmpV = new THREE.Vector3();
+  const wpV = new THREE.Vector3();
 
   function angleLerp(a, b, t) {
     let d = ((b - a + Math.PI) % (Math.PI * 2)) - Math.PI;
@@ -616,6 +634,8 @@ export async function createWorld(canvas, options) {
   }
 
   function update(dt) {
+    visT += dt;
+    if (visT > 0.2) { visT = 0; visCache.clear(); }
     let dx = 0, dz = 0;
     if (!paused && !busy) {
       if (keys.has('up')) { dx += fwd.x; dz += fwd.z; }
@@ -677,7 +697,7 @@ export async function createWorld(canvas, options) {
       if (it.highlight) it.highlight(it.glowT, time);
     }
     if (near) {
-      ring.position.copy(area.toWorld(near.x, near.z, 0.04));
+      area.toWorld(near.x, near.z, 0.04, ring.position);
       ring.material.opacity = 0.55 + Math.sin(time * 4) * 0.25;
     } else ring.material.opacity = Math.max(0, ring.material.opacity - dt * 3);
 
@@ -690,10 +710,10 @@ export async function createWorld(canvas, options) {
     }
     B.update?.(dt, time, area.id);
     updateSnow(dt, time);
-    if (area.env.followLamp) lamp.position.copy(area.toWorld(player.x, player.z, 1.4));
+    if (area.env.followLamp) area.toWorld(player.x, player.z, 1.4, lamp.position);
 
     // 캐릭터
-    const wp = area.toWorld(player.x, player.z);
+    const wp = area.toWorld(player.x, player.z, 0, wpV);
     avatar.root.position.copy(wp);
     avatar.root.rotation.y = player.yaw;
     avatar.update(dt, player.moving, time, player.moving && running);
@@ -753,6 +773,26 @@ export async function createWorld(canvas, options) {
   }
 
   // ---------------- 시작 ----------------
+  // 모든 구역 · 반투명 상태의 셰이더를 미리 만들어 둠 (처음 들어갈 때 멈칫하는 현상 방지)
+  function precompile() {
+    const all = Object.values(areas);
+    const fadeMats = all.flatMap((a) => a.fadeables.flatMap((f) => f.mats));
+    all.forEach((a) => { a.root.visible = true; });
+    snowPts.visible = true;
+    try {
+      renderer.compile(scene, camera);
+      fadeMats.forEach((m) => { m.transparent = true; m.needsUpdate = true; });
+      renderer.compile(scene, camera);
+    } catch (e) {
+      console.warn('[hanok] 셰이더 미리 준비 실패 (계속 진행)', e);
+    } finally {
+      fadeMats.forEach((m) => { m.transparent = !!m.userData.baseTransparent; m.needsUpdate = true; });
+    }
+  }
+  snapCamera();
+  camera.position.copy(camTarget).addScaledVector(camDir, dist);
+  camera.lookAt(camTarget);
+  precompile();
   applyEnv(area);
   applyState(options.state || {});
   snapCamera();
@@ -777,7 +817,7 @@ export async function createWorld(canvas, options) {
   canvas.addEventListener('wheel', onWheel, { passive: false });
 
   let last = performance.now();
-  let slowTime = 0, degraded = false, raf = 0, suspended = false;
+  let frameAcc = 0, frameN = 0, lastAdjust = 0, raf = 0, suspended = false;
   function loop(now) {
     if (suspended) { raf = 0; return; }
     const dt = Math.min(0.05, (now - last) / 1000);
@@ -786,14 +826,20 @@ export async function createWorld(canvas, options) {
     update(dt);
     composer.render();
     updateTag();
-    if (!degraded && time > 3) {
-      slowTime = dt > 0.028 ? slowTime + dt : Math.max(0, slowTime - dt * 0.5);
-      if (slowTime > 1.5) {
-        degraded = true;
-        pixelRatio = 1;
-        renderer.setPixelRatio(1);
-        bloom.enabled = false;
+    // 프레임이 버거우면 빛 번짐 → 해상도 순으로 낮추고, 여유가 생기면 천천히 되돌림
+    frameAcc += dt; frameN++;
+    if (frameN >= 90) {
+      const avg = frameAcc / frameN;
+      frameAcc = 0; frameN = 0;
+      if (time - lastAdjust > 2 && avg > 0.021) {
+        if (bloom.enabled) { bloomAllowed = false; bloom.enabled = false; }
+        else if (pixelRatio > 0.7) { pixelRatio = Math.max(0.7, +(pixelRatio - 0.15).toFixed(2)); renderer.setPixelRatio(pixelRatio); resize(); }
+        lastAdjust = time;
+      } else if (time - lastAdjust > 8 && avg < 0.0125 && pixelRatio < MAX_PR) {
+        pixelRatio = Math.min(MAX_PR, +(pixelRatio + 0.1).toFixed(2));
+        renderer.setPixelRatio(pixelRatio);
         resize();
+        lastAdjust = time;
       }
     }
     raf = requestAnimationFrame(loop);
