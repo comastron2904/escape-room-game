@@ -383,7 +383,8 @@ function openMenu() {
   openModal(`${head('☰', '메뉴')}
     <div class="choice-list">
       <button type="button" data-a="board">🏆 순위표</button>
-      <button type="button" data-a="sound">${sfx.muted ? '🔇 소리 켜기' : '🔊 소리 끄기'}</button>
+      <button type="button" data-a="music">${sfx.musicOn ? '🎵 배경음악 끄기' : '🎵 배경음악 켜기'}</button>
+      <button type="button" data-a="sound">${sfx.muted ? '🔇 효과음 켜기' : '🔊 효과음 끄기'}</button>
       <button type="button" data-a="char">🧑 캐릭터 바꾸기</button>
       <button type="button" data-a="howto">❓ 조작 방법 · 전설 다시 보기</button>
       ${state.mode === 'preview' ? '' : '<button type="button" data-a="reset">🔄 처음부터 다시 하기 (새 기록)</button>'}
@@ -392,6 +393,7 @@ function openMenu() {
   card().querySelectorAll('[data-a]').forEach((b) => b.addEventListener('click', async () => {
     const a = b.dataset.a;
     if (a === 'sound') { sfx.setMuted(!sfx.muted); openMenu(); return; }
+    if (a === 'music') { sfx.setMusic(!sfx.musicOn); openMenu(); return; }
     closeModal(null);
     if (a === 'board') openLeaderboard();
     if (a === 'char') changeCharacter();
@@ -697,7 +699,11 @@ async function main() {
   world = await mod.createWorld(canvas, {
     look, nickname: state.nickname, state, game, story,
     onNear: showNear, onActivate, sfx: (n) => sfx.play(n),
-    onAreaChange: (id) => { $('areaName').textContent = AREA_NAMES[id] || ''; state.area = id; save(); },
+    onAreaChange: (id) => {
+      $('areaName').textContent = AREA_NAMES[id] || '';
+      state.area = id; save();
+      sfx.setMusicLevel(id === 'village' ? 1 : id === 'vault' || id === 'byeoldang' ? 0.55 : 0.8);
+    },
   });
   $('areaName').textContent = AREA_NAMES[world.area] || '';
   $('loading').classList.add('done');
@@ -708,6 +714,8 @@ async function main() {
   $('profileChip').hidden = false;
   $('profileChip').addEventListener('click', changeCharacter);
 
+  if (sfx.musicOn) sfx.startMusic();
+  window.addEventListener('pointerdown', () => { if (sfx.musicOn) sfx.startMusic(); }, { once: true });
   if (!state.clues.length && !state.solved.length) await showIntro();
   else if (state.finished) toast('이미 탈출에 성공한 기록이에요. 순위표는 메뉴에서 볼 수 있어요.');
   else toast(`이어서 진행해요 · 조각 ${state.solved.length}/${config.puzzles.length}`);

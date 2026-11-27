@@ -25,7 +25,7 @@ export const ITEMS = {
 export const DIRS = {
   N: { hanja: '北', ko: '북', arrow: '↑', phrase: '북극성이 빛나는 쪽' },
   E: { hanja: '東', ko: '동', arrow: '→', phrase: '해가 뜨는 쪽' },
-  S: { hanja: '南', ko: '남', arrow: '↓', phrase: '한낮의 해가 걸린 쪽' },
+  S: { hanja: '南', ko: '남', arrow: '↓', phrase: '나침반 빨간 바늘이 가리키는 반대쪽' },
   W: { hanja: '西', ko: '서', arrow: '←', phrase: '해가 지는 쪽' },
 };
 export const DIR_KEYS = ['N', 'E', 'S', 'W'];
@@ -73,7 +73,7 @@ export function buildGoals(cfg) {
     hints: [
       { text: '석단 옆 비석을 읽어 보세요. 일곱 조각은 📒 수첩에 모두 기록돼 있어요.' },
       { text: '조각의 〔一〕〔二〕〔三〕… 은 순서예요. 一=1, 二=2, 三=3, 四=4, 五=5, 六=6, 七=7' },
-      { text: '해가 뜨는 쪽=동(東), 해가 지는 쪽=서(西), 한낮의 해가 걸린 쪽=남(南), 북극성이 빛나는 쪽=북(北)' },
+      { text: '해가 뜨는 쪽=동(東), 해가 지는 쪽=서(西), 나침반 빨간 바늘이 가리키는 반대쪽=남(南), 북극성이 빛나는 쪽=북(北)' },
     ],
   });
   goals.push({
