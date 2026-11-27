@@ -413,3 +413,32 @@ body.preview-mode .preview-banner { display: block; position: fixed; top: 0; lef
 }
 .seq-slot i { font-style: normal; font-family: var(--serif); font-size: 15px; color: var(--ink-2); opacity: .45; }
 .seq-slots.numbered .seq-slot.next { border-color: var(--red); border-style: solid; box-shadow: 0 0 0 3px rgba(184,53,44,.15); }
+/* 단답형 · 객관식 · OX */
+.text-wrap { display: grid; justify-items: center; gap: 6px; }
+.text-answer {
+  width: min(360px, 100%); padding: 14px 16px; border-radius: 12px; text-align: center;
+  font-size: 22px; font-weight: 800; font-family: var(--serif); color: #f4d58a;
+  background: linear-gradient(180deg, #4a3218, #2e1e0e); border: 2px solid #b8893a; outline: none;
+}
+.text-answer::placeholder { color: rgba(244,213,138,.45); font-size: 16px; font-weight: 600; }
+.text-answer:focus { border-color: var(--gold-2); box-shadow: 0 0 0 3px rgba(244,213,138,.25); }
+.choice-wrap { display: grid; gap: 8px; }
+.choice-opt {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; cursor: pointer; text-align: left;
+  border: 2px solid rgba(42,29,20,.18); background: rgba(255,255,255,.6); font-size: 16px; font-weight: 600; color: var(--ink);
+}
+.choice-opt:hover { background: rgba(255,255,255,.9); }
+.choice-opt .cm { font-size: 22px; color: var(--ink-2); }
+.choice-opt[aria-pressed='true'] { border-color: var(--red); background: #fff3d6; box-shadow: 0 4px 12px rgba(184,53,44,.15); }
+.choice-opt[aria-pressed='true'] .cm { color: var(--red); }
+.ox-wrap { display: flex; justify-content: center; gap: 18px; margin: 4px 0 6px; }
+.ox-btn {
+  width: 120px; height: 120px; border-radius: 24px; cursor: pointer; font-size: 70px; font-weight: 900; line-height: 1;
+  border: 3px solid rgba(42,29,20,.2); background: rgba(255,255,255,.6);
+}
+.ox-btn.o { color: #2468d8; } .ox-btn.x { color: var(--red); }
+.ox-btn[aria-pressed='true'].o { background: #e3eeff; border-color: #2468d8; transform: scale(1.05); }
+.ox-btn[aria-pressed='true'].x { background: #ffe6e2; border-color: var(--red); transform: scale(1.05); }
+.q-img { cursor: zoom-in; transition: max-height .2s; }
+.q-img.big { max-height: 70vh; cursor: zoom-out; }
+@media (max-width: 640px) { .ox-btn { width: 96px; height: 96px; font-size: 56px; } }

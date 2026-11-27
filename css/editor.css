@@ -77,3 +77,26 @@ body.editor .toasts { top: 76px; }
   .ed-top h1 { font-size: 16px; }
   .big-code { font-size: 32px; }
 }
+/* 그림 올리기 */
+.img-box { border: 2px dashed rgba(42,29,20,.22); border-radius: 12px; padding: 10px; background: rgba(255,255,255,.4); transition: border-color .15s, background .15s; }
+.img-box.over { border-color: var(--red); background: #fff6e2; }
+.img-box .img-prev { max-height: 200px; margin: 0 auto 8px; }
+.img-empty { padding: 14px; text-align: center; font-size: 13px; color: var(--ink-2); }
+.img-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; }
+.file-btn { display: inline-flex; align-items: center; cursor: pointer; }
+.img-url summary { cursor: pointer; font-size: 12px; color: var(--ink-2); font-weight: 700; }
+.img-url input { margin-top: 6px; min-width: 260px; }
+.type-tog { flex-wrap: wrap; }
+.type-tog button { border-right: 1px solid rgba(42,29,20,.12); }
+/* 객관식 · OX */
+.opt-list { display: grid; gap: 6px; margin-bottom: 8px; }
+.opt-row { display: flex; gap: 6px; align-items: center; }
+.opt-row input { flex: 1; }
+.opt-pick { width: 40px; height: 40px; border-radius: 10px; border: 1px solid rgba(42,29,20,.25); background: rgba(255,255,255,.7); cursor: pointer; font-size: 18px; font-weight: 800; color: var(--ink-2); flex-shrink: 0; }
+.opt-row.right .opt-pick { background: var(--green); color: #fff; border-color: var(--green); }
+.opt-row.right input { border-color: var(--green); background: #effaf4; }
+.opt-del { border: 0; background: none; color: var(--red); font-weight: 800; cursor: pointer; font-size: 16px; padding: 4px 8px; }
+.ox-pick { display: flex; gap: 10px; }
+.ox-pick button { padding: 12px 22px; border-radius: 12px; border: 2px solid rgba(42,29,20,.2); background: rgba(255,255,255,.7); font-size: 17px; font-weight: 800; cursor: pointer; color: var(--ink); }
+.ox-pick button[data-ox="O"][aria-pressed='true'] { background: #e3eeff; border-color: #2468d8; color: #2468d8; }
+.ox-pick button[data-ox="X"][aria-pressed='true'] { background: #ffe6e2; border-color: var(--red); color: var(--red); }

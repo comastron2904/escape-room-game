@@ -1,8 +1,8 @@
 // 교사용 API: 구성 만들기 · 불러오기 · 고치기 · 순위표 관리
 // 구성 코드 + 편집 비밀번호로 본인 확인 (계정 없이)
-import { randomInt } from 'node:crypto';
-import { handler, rest, getOne, enc, HttpError, cleanCode, hashPassword, verifyPassword, newCode, isUuid } from './_lib.js';
-import { validatePuzzles, normalizeDirection, normalizeNumber } from '../js/game/answer.js';
+import { randomInt, randomBytes } from 'node:crypto';
+import { handler, rest, getOne, enc, HttpError, cleanCode, hashPassword, verifyPassword, newCode, isUuid, uploadImage } from './_lib.js';
+import { validatePuzzles, cleanPuzzle } from '../js/game/answer.js';
 
 const STORIES = ['seolhwa', 'hong', 'kimsatgat'];
 const COUNT = 7;
@@ -13,13 +13,7 @@ function cleanConfig({ title, story, puzzles }) {
   if (!STORIES.includes(story)) throw new HttpError(400, '이야기를 골라 주세요.');
   const errs = validatePuzzles(puzzles, COUNT);
   if (errs.length) throw new HttpError(400, errs.join('\n'));
-  const ps = puzzles.map((p) => ({
-    q: String(p.q).trim().slice(0, 1500),
-    image: p.image ? String(p.image).trim().slice(0, 500) : null,
-    type: p.type === 'direction' ? 'direction' : 'number',
-    answer: p.type === 'direction' ? normalizeDirection(p.answer) : normalizeNumber(p.answer),
-    hint: String(p.hint || '').trim().slice(0, 500),
-  }));
+  const ps = puzzles.map(cleanPuzzle);
   return { title: t, story, puzzles: ps };
 }
 
@@ -32,6 +26,16 @@ async function auth(code, password) {
   return c;
 }
 const finalSeq = () => Array.from({ length: COUNT }, () => 'NESW'[randomInt(4)]).join('');
+// 편집 화면에서 올린 그림(data URL)은 Storage 에 저장하고 주소로 바꿈
+async function storeImages(code, puzzles) {
+  for (let i = 0; i < puzzles.length; i++) {
+    const img = puzzles[i].image;
+    if (img && img.startsWith('data:')) {
+      puzzles[i].image = await uploadImage(`${code}/${i + 1}-${randomBytes(5).toString('hex')}`, img);
+    }
+  }
+  return puzzles;
+}
 const publicFull = (c) => ({ code: c.code, title: c.title, story: c.story, puzzles: c.puzzles, updatedAt: c.updated_at });
 
 export default handler({
@@ -43,6 +47,7 @@ export default handler({
       const code = newCode(6);
       const exists = await getOne('configs', `code=eq.${code}`, 'code');
       if (exists) continue;
+      await storeImages(code, cfg.puzzles);
       await rest('configs', { method: 'POST', body: { code, ...cfg, final_seq: finalSeq(), edit_hash: hashPassword(pw) } });
       return { code };
     }
@@ -56,6 +61,7 @@ export default handler({
   async update(body) {
     const c = await auth(body.code, body.password);
     const cfg = cleanConfig(body);
+    await storeImages(c.code, cfg.puzzles);
     const rows = await rest(`configs?code=eq.${enc(c.code)}`, { method: 'PATCH', body: { ...cfg, updated_at: new Date().toISOString() }, prefer: 'return=representation' });
     return publicFull(rows[0]);
   },

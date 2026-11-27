@@ -38,3 +38,8 @@ alter table public.configs enable row level security;
 alter table public.sessions enable row level security;
 revoke all on public.configs from anon, authenticated;
 revoke all on public.sessions from anon, authenticated;
+
+-- 문제 그림 저장소 (공개 읽기 버킷). 그림 올리기는 서버(service_role)만 할 수 있습니다.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('quiz-images', 'quiz-images', true, 1048576, array['image/jpeg', 'image/png', 'image/webp'])
+on conflict (id) do update set public = true;

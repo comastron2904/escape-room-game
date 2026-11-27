@@ -1,14 +1,14 @@
 // 교사용 편집 모드
 import { STORIES, STORY_IDS } from './game/stories.js';
 import { SPOTS, DIRS, PUZZLE_COUNT, DEMO_CONFIG } from './game/content.js';
-import { validatePuzzles, normalizeDirection } from './game/answer.js';
+import { validatePuzzles, normalizeDirection, normalizeOX, ANSWER_TYPES } from './game/answer.js';
 import { formatTime } from './game/state.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const DRAFT_KEY = 'hanok.editor.draft';
 
-const blankPuzzle = () => ({ q: '', image: '', type: 'number', answer: '', hint: '' });
+const blankPuzzle = () => ({ q: '', image: '', type: 'number', answer: '', hint: '', options: ['', '', '', ''] });
 let cfg = { title: '', story: 'seolhwa', puzzles: Array.from({ length: PUZZLE_COUNT }, blankPuzzle) };
 let loaded = null; // { code, password }
 
@@ -33,7 +33,38 @@ function toast(msg) {
 }
 
 function saveDraft() {
-  try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ cfg, code: loaded?.code || null, at: Date.now() })); } catch { /* 무시 */ }
+  const put = (c) => localStorage.setItem(DRAFT_KEY, JSON.stringify({ cfg: c, code: loaded?.code || null, at: Date.now() }));
+  try { put(cfg); } catch {
+    // 그림이 많아 저장 공간이 모자라면 그림만 빼고 저장
+    try { put({ ...cfg, puzzles: cfg.puzzles.map((p) => ({ ...p, image: p.image?.startsWith('data:') ? '' : p.image })) }); } catch { /* 무시 */ }
+  }
+}
+
+// ---------------- 그림 올리기 (브라우저에서 줄여서 담음 → 저장할 때 서버가 Storage 에 올림) ----------------
+async function compressImage(file) {
+  if (!file || !/^image\//.test(file.type)) throw new Error('그림 파일(jpg, png 등)만 올릴 수 있어요.');
+  if (file.size > 15 * 1024 * 1024) throw new Error('그림 파일이 너무 커요. (15MB 이하)');
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('그림을 읽지 못했어요.')); im.src = url; });
+    let max = 1280;
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const sc = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(img.naturalWidth * sc));
+      c.height = Math.max(1, Math.round(img.naturalHeight * sc));
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, c.width, c.height);
+      ctx.drawImage(img, 0, 0, c.width, c.height);
+      for (const q of [0.85, 0.75, 0.62]) {
+        const d = c.toDataURL('image/jpeg', q);
+        if (d.length <= 380_000) return d;
+      }
+      max = Math.round(max * 0.75);
+    }
+    throw new Error('그림을 충분히 줄이지 못했어요. 더 작은 그림을 써 주세요.');
+  } finally { URL.revokeObjectURL(url); }
 }
 
 // ---------------- 이야기 ----------------
@@ -73,38 +104,57 @@ const NOTES = {
   6: '별당 안 (5번을 먼저 풀어야 들어감)',
 };
 function renderPuzzles() {
-  $('puzzles').innerHTML = cfg.puzzles.map((p, i) => `
+  $('puzzles').innerHTML = cfg.puzzles.map((p, i) => {
+    const type = ANSWER_TYPES[p.type] ? p.type : 'number';
+    return `
     <div class="pz" data-i="${i}">
       <div class="pz-head"><span class="pn">${i + 1}</span><div><b>${esc(SPOTS[i].name)}</b><div class="loc">${esc(SPOTS[i].where)}</div></div>${NOTES[i] ? `<span class="pz-note">${esc(NOTES[i])}</span>` : ''}</div>
       <label class="lbl">문제</label>
       <textarea data-f="q" maxlength="1500" placeholder="예: 3 × 4 + 5 의 값은?">${esc(p.q)}</textarea>
-      <div class="pz-grid">
-        <div>
-          <label class="lbl">정답 종류</label>
-          <div class="type-tog"><button type="button" data-type="number" aria-pressed="${p.type !== 'direction'}">🔢 숫자</button><button type="button" data-type="direction" aria-pressed="${p.type === 'direction'}">🧭 방향</button></div>
-          <label class="lbl">정답</label>
-          <div data-answer></div>
+      <label class="lbl">그림 (선택)</label>
+      <div class="img-box" data-drop>
+        ${p.image ? `<img class="img-prev" src="${esc(p.image)}" alt="" referrerpolicy="no-referrer" onerror="this.alt='그림을 불러오지 못했어요'" />` : '<div class="img-empty">🖼️ 그림 파일을 끌어다 놓거나, 복사한 그림을 이 카드에서 Ctrl+V</div>'}
+        <div class="img-actions">
+          <label class="btn btn-ghost btn-sm file-btn">📁 그림 올리기<input type="file" accept="image/*" data-file hidden /></label>
+          ${p.image ? '<button type="button" class="btn btn-ghost btn-sm" data-imgdel>🗑️ 그림 빼기</button>' : ''}
+          <details class="img-url"><summary>주소로 넣기</summary><input type="url" data-f="imageUrl" maxlength="500" value="${esc(p.image && !p.image.startsWith('data:') ? p.image : '')}" placeholder="https://…/그림.png" /></details>
         </div>
-        <div>
-          <label class="lbl">그림 주소 (선택, https://…)</label>
-          <input type="url" data-f="image" maxlength="500" value="${esc(p.image || '')}" placeholder="https://example.com/그림.png" />
-          ${p.image ? `<img class="img-prev" src="${esc(p.image)}" alt="" referrerpolicy="no-referrer" onerror="this.hidden=true" />` : ''}
-          <label class="lbl">힌트 (선택 · 학생이 보면 +1분)</label>
-          <input type="text" data-f="hint" maxlength="500" value="${esc(p.hint || '')}" placeholder="예: 곱셈을 먼저 계산해요" />
-        </div>
+        <p class="err tiny" data-imgerr></p>
       </div>
-    </div>`).join('');
+      <label class="lbl">정답 종류</label>
+      <div class="type-tog">${Object.entries(ANSWER_TYPES).map(([k, t]) => `<button type="button" data-type="${k}" aria-pressed="${type === k}">${t.icon} ${t.name}</button>`).join('')}</div>
+      <label class="lbl">정답</label>
+      <div data-answer></div>
+      <label class="lbl">힌트 (선택 · 학생이 보면 +1분)</label>
+      <input type="text" data-f="hint" maxlength="500" value="${esc(p.hint || '')}" placeholder="예: 곱셈을 먼저 계산해요" />
+    </div>`;
+  }).join('');
   $('puzzles').querySelectorAll('.pz').forEach((el) => {
     const i = +el.dataset.i;
-    el.querySelectorAll('[data-f]').forEach((inp) => inp.addEventListener('input', () => {
-      cfg.puzzles[i][inp.dataset.f] = inp.value;
-      saveDraft();
-    }));
-    el.querySelector('[data-f="image"]').addEventListener('change', () => renderPuzzles());
+    const p = cfg.puzzles[i];
+    el.querySelectorAll('[data-f="q"], [data-f="hint"]').forEach((inp) => inp.addEventListener('input', () => { p[inp.dataset.f] = inp.value; saveDraft(); }));
+    el.querySelector('[data-f="imageUrl"]').addEventListener('change', (e) => { p.image = e.target.value.trim(); saveDraft(); renderPuzzles(); });
+    const setImage = async (file) => {
+      const errEl = el.querySelector('[data-imgerr]');
+      errEl.textContent = '그림을 줄이는 중…';
+      try { p.image = await compressImage(file); saveDraft(); renderPuzzles(); }
+      catch (e) { errEl.textContent = e.message; }
+    };
+    el.querySelector('[data-file]').addEventListener('change', (e) => { if (e.target.files[0]) setImage(e.target.files[0]); });
+    el.querySelector('[data-imgdel]')?.addEventListener('click', () => { p.image = ''; saveDraft(); renderPuzzles(); });
+    const drop = el.querySelector('[data-drop]');
+    drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
+    drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+    drop.addEventListener('drop', (e) => { e.preventDefault(); drop.classList.remove('over'); const f = e.dataTransfer.files[0]; if (f) setImage(f); });
+    el.addEventListener('paste', (e) => {
+      const item = [...(e.clipboardData?.items || [])].find((x) => x.type.startsWith('image/'));
+      if (item) { e.preventDefault(); setImage(item.getAsFile()); }
+    });
     el.querySelectorAll('[data-type]').forEach((b) => b.addEventListener('click', () => {
-      if (cfg.puzzles[i].type === b.dataset.type) return;
-      cfg.puzzles[i].type = b.dataset.type;
-      cfg.puzzles[i].answer = '';
+      if (p.type === b.dataset.type) return;
+      p.type = b.dataset.type;
+      p.answer = b.dataset.type === 'choice' ? '' : '';
+      if (b.dataset.type === 'choice' && !(p.options && p.options.length >= 2)) p.options = ['', '', '', ''];
       saveDraft();
       renderPuzzles();
     }));
@@ -113,10 +163,46 @@ function renderPuzzles() {
 }
 function renderAnswer(box, i) {
   const p = cfg.puzzles[i];
-  if (p.type !== 'direction') {
+  const type = ANSWER_TYPES[p.type] ? p.type : 'number';
+  if (type === 'number') {
     box.innerHTML = `<input type="text" inputmode="decimal" maxlength="12" value="${esc(p.answer)}" placeholder="예: 17 · 3.5 · 3/4 · -2" />
       <p class="muted tiny">정수, 소수, 분수(3/4), 음수 가능. 0.50 과 0.5 는 같은 답으로 봐요.</p>`;
     box.querySelector('input').addEventListener('input', (e) => { p.answer = e.target.value; saveDraft(); });
+    return;
+  }
+  if (type === 'text') {
+    box.innerHTML = `<input type="text" maxlength="120" value="${esc(p.answer)}" placeholder="예: 세종대왕, 세종" />
+      <p class="muted tiny">맞는 답이 여러 개면 쉼표(,)로 나눠 적어요. 띄어쓰기·영문 대소문자·마침표는 무시해요.</p>`;
+    box.querySelector('input').addEventListener('input', (e) => { p.answer = e.target.value; saveDraft(); });
+    return;
+  }
+  if (type === 'ox') {
+    const cur = normalizeOX(p.answer);
+    box.innerHTML = `<div class="ox-pick"><button type="button" data-ox="O" aria-pressed="${cur === 'O'}">O 맞다</button><button type="button" data-ox="X" aria-pressed="${cur === 'X'}">X 틀리다</button></div>`;
+    box.querySelectorAll('[data-ox]').forEach((b) => b.addEventListener('click', () => { p.answer = b.dataset.ox; saveDraft(); renderAnswer(box, i); }));
+    return;
+  }
+  if (type === 'choice') {
+    if (!Array.isArray(p.options) || p.options.length < 2) p.options = ['', '', '', ''];
+    const marks = ['①', '②', '③', '④', '⑤', '⑥'];
+    box.innerHTML = `<div class="opt-list">${p.options.map((o, k) => `
+        <div class="opt-row ${String(p.answer) === String(k) && p.answer !== '' ? 'right' : ''}">
+          <button type="button" class="opt-pick" data-pick="${k}" title="정답으로 정하기">${String(p.answer) === String(k) && p.answer !== '' ? '✔' : marks[k]}</button>
+          <input type="text" maxlength="80" data-opt="${k}" value="${esc(o)}" placeholder="보기 ${k + 1}" />
+          ${p.options.length > 2 ? `<button type="button" class="opt-del" data-del="${k}" title="보기 빼기">✕</button>` : ''}
+        </div>`).join('')}</div>
+      ${p.options.length < 6 ? '<button type="button" class="btn btn-ghost btn-sm" data-addopt>＋ 보기 추가</button>' : ''}
+      <p class="muted tiny">왼쪽 번호를 눌러 정답 보기를 정해요. (✔ 표시가 정답)</p>`;
+    box.querySelectorAll('[data-opt]').forEach((inp) => inp.addEventListener('input', () => { p.options[+inp.dataset.opt] = inp.value; saveDraft(); }));
+    box.querySelectorAll('[data-pick]').forEach((b) => b.addEventListener('click', () => { p.answer = +b.dataset.pick; saveDraft(); renderAnswer(box, i); }));
+    box.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', () => {
+      const k = +b.dataset.del;
+      p.options.splice(k, 1);
+      if (p.answer !== '' && Number(p.answer) === k) p.answer = '';
+      else if (p.answer !== '' && Number(p.answer) > k) p.answer = Number(p.answer) - 1;
+      saveDraft(); renderAnswer(box, i);
+    }));
+    box.querySelector('[data-addopt]')?.addEventListener('click', () => { p.options.push(''); saveDraft(); renderAnswer(box, i); });
     return;
   }
   const render = () => {
@@ -165,7 +251,7 @@ $('newBtn').addEventListener('click', () => {
   try { d = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); } catch { /* 무시 */ }
   if (d && !d.code && d.cfg && confirm('저장하지 않은 작성 중인 구성이 있어요. 이어서 작성할까요?\n(취소를 누르면 빈 구성으로 시작)')) cfg = d.cfg;
   else if (confirm('체험판 예시 문제를 채워 넣고 시작할까요?\n(취소를 누르면 빈 칸으로 시작)')) {
-    cfg = { title: '', story: 'seolhwa', puzzles: DEMO_CONFIG.puzzles.map((p) => ({ image: '', ...p })) };
+    cfg = { title: '', story: 'seolhwa', puzzles: DEMO_CONFIG.puzzles.map((p) => ({ image: '', hint: '', options: ['', '', '', ''], ...p })) };
   }
   loaded = null;
   openEditor();
@@ -179,7 +265,7 @@ $('loadForm').addEventListener('submit', async (e) => {
   if (!code || !password) { $('loadErr').textContent = '코드와 비밀번호를 입력해 주세요.'; return; }
   try {
     const c = await api('load', { code, password });
-    cfg = { title: c.title, story: c.story, puzzles: c.puzzles.map((p) => ({ image: '', hint: '', ...p })) };
+    cfg = { title: c.title, story: c.story, puzzles: c.puzzles.map((p) => ({ image: '', hint: '', options: ['', '', '', ''], ...p })) };
     loaded = { code: c.code, password };
     openEditor();
     toast(`${c.code} 구성을 불러왔어요.`);
@@ -200,7 +286,9 @@ $('previewBtn').addEventListener('click', () => {
   const errs = collect();
   if (errs.length) { $('saveErr').textContent = `미리 해보기 전에 고쳐 주세요:\n${errs.join('\n')}`; return; }
   $('saveErr').textContent = '';
-  localStorage.setItem('hanok.preview', JSON.stringify({ code: 'PREVIEW', title: cfg.title, story: cfg.story, puzzles: cfg.puzzles }));
+  const data = JSON.stringify({ code: 'PREVIEW', title: cfg.title, story: cfg.story, puzzles: cfg.puzzles });
+  try { sessionStorage.setItem('hanok.preview', data); } catch { /* 무시 */ }
+  try { localStorage.setItem('hanok.preview', data); } catch { /* 그림이 커서 못 담으면 sessionStorage 사용 */ }
   window.open('./?preview=1', '_blank');
 });
 
@@ -209,11 +297,14 @@ $('editor').addEventListener('submit', async (e) => {
   const errs = collect();
   $('saveErr').textContent = '';
   if (errs.length) { $('saveErr').textContent = errs.join('\n'); return; }
+  if (JSON.stringify(cfg).length > 4_000_000) { $('saveErr').textContent = '그림을 합친 크기가 너무 커요. 그림 몇 개를 더 작은 것으로 바꿔 주세요.'; return; }
   const btn = $('saveBtn');
-  btn.disabled = true; btn.textContent = '저장하는 중…';
+  btn.disabled = true; btn.textContent = '저장하는 중… (그림이 있으면 조금 걸려요)';
   try {
     if (loaded) {
-      await api('update', { code: loaded.code, password: loaded.password, ...cfg });
+      const c = await api('update', { code: loaded.code, password: loaded.password, ...cfg });
+      cfg.puzzles = c.puzzles.map((p) => ({ image: '', hint: '', options: ['', '', '', ''], ...p }));
+      renderPuzzles();
       toast('저장했어요. 학생 화면에는 새로 시작할 때부터 반영돼요.');
     } else {
       const pw = $('pw1').value;
@@ -221,6 +312,11 @@ $('editor').addEventListener('submit', async (e) => {
       if (pw !== $('pw2').value) throw new Error('비밀번호 확인이 맞지 않아요.');
       const r = await api('create', { ...cfg, password: pw });
       loaded = { code: r.code, password: pw };
+      try {
+        const c = await api('load', loaded);
+        cfg.puzzles = c.puzzles.map((p) => ({ image: '', hint: '', options: ['', '', '', ''], ...p }));
+        renderPuzzles();
+      } catch { /* 무시 */ }
       $('pwNew').hidden = true; $('pwLoaded').hidden = false;
       $('codeBadge').hidden = false; $('codeBadge').textContent = r.code;
       $('boardSec').hidden = false;

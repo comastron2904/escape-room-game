@@ -34,6 +34,28 @@ export async function rest(path, { method = 'GET', body, prefer, count = false }
 }
 export const enc = encodeURIComponent;
 
+// 그림 올리기 (Supabase Storage 공개 버킷 'quiz-images')
+export const IMAGE_BUCKET = 'quiz-images';
+export async function uploadImage(path, dataUrl) {
+  const { url, key } = env();
+  const m = /^data:(image\/(jpeg|png|webp));base64,(.+)$/.exec(dataUrl || '');
+  if (!m) throw new HttpError(400, '그림 파일 형식을 읽지 못했어요.');
+  const buf = Buffer.from(m[3], 'base64');
+  if (buf.length > 520_000) throw new HttpError(400, '그림이 너무 큽니다.');
+  const ext = m[2] === 'jpeg' ? 'jpg' : m[2];
+  const full = `${path}.${ext}`;
+  const r = await fetch(`${url}/storage/v1/object/${IMAGE_BUCKET}/${full}`, {
+    method: 'POST',
+    headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': m[1], 'x-upsert': 'true', 'cache-control': 'max-age=31536000' },
+    body: buf,
+  });
+  if (!r.ok) {
+    console.error('[storage]', r.status, await r.text());
+    throw new HttpError(502, '그림을 저장하지 못했어요. (Supabase 에 quiz-images 버킷이 있는지 확인: schema.sql 다시 실행)');
+  }
+  return `${url}/storage/v1/object/public/${IMAGE_BUCKET}/${full}`;
+}
+
 export async function getOne(table, filter, select = '*') {
   const rows = await rest(`${table}?${filter}&select=${select}&limit=1`);
   return rows?.[0] || null;

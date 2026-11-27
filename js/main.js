@@ -5,6 +5,7 @@ import { createGame } from './game/logic.js';
 import { ITEMS, DIRS, DIR_KEYS, DEMO_CONFIG, HINT_PENALTY_MS, PUZZLE_COUNT, fragmentText } from './game/content.js';
 import { getStory } from './game/stories.js';
 import { createRemoteBackend, createLocalBackend } from './api.js';
+import { ANSWER_TYPES } from './game/answer.js';
 import { loadCharacterLibrary, createCharacterPreview } from './3d/characters.js';
 import { createSfx } from './sfx.js';
 
@@ -126,7 +127,7 @@ function uiFragment({ order, text, count, total }) {
 
 // ---- 숫자 / 방향 입력 공용 부품 ----
 const NUM_HANJA = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
-function answerInput(type, len, { numbered = false } = {}) {
+function answerInput(type, len, { numbered = false, options = [] } = {}) {
   if (type === 'direction') {
     return `<div class="dir-wrap">
       <div class="seq-slots${numbered ? ' numbered' : ''}" data-slots>${new Array(len).fill(0).map((_, i) => `<div class="seq-slot" data-n="${numbered ? NUM_HANJA[i] : ''}"></div>`).join('')}</div>
@@ -136,14 +137,29 @@ function answerInput(type, len, { numbered = false } = {}) {
         <span></span><button type="button" class="dir-btn" data-dir="S"><b>南</b>남 ↓</button><span></span>
       </div></div>`;
   }
+  if (type === 'text') {
+    return `<div class="text-wrap">
+      <input class="text-answer" data-text maxlength="40" placeholder="정답을 입력하세요" autocomplete="off" spellcheck="false" />
+      <p class="muted tiny">띄어쓰기는 상관없어요 · Enter 로 제출</p></div>`;
+  }
+  if (type === 'choice') {
+    const marks = ['①', '②', '③', '④', '⑤', '⑥'];
+    return `<div class="choice-wrap">${options.map((o, i) => `<button type="button" class="choice-opt" data-c="${i}" aria-pressed="false"><span class="cm">${marks[i]}</span><span>${esc(o)}</span></button>`).join('')}
+      <p class="muted tiny">보기를 고른 뒤 자물쇠 열기 · 숫자 키 1~${options.length} 로도 고를 수 있어요</p></div>`;
+  }
+  if (type === 'ox') {
+    return `<div class="ox-wrap"><button type="button" class="ox-btn o" data-ox="O" aria-pressed="false">O</button><button type="button" class="ox-btn x" data-ox="X" aria-pressed="false">X</button></div>`;
+  }
   const keys = ['7', '8', '9', '4', '5', '6', '1', '2', '3', '-', '0', '.', '/', 'C', '⌫'];
   return `<div class="num-wrap">
     <div class="num-display" data-display>&nbsp;</div>
     <div class="keypad">${keys.map((k) => `<button type="button" data-k="${k}">${k}</button>`).join('')}</div>
     <p class="muted tiny">키보드 숫자로도 입력할 수 있어요 · 분수는 3/4 처럼</p></div>`;
 }
-function bindAnswerInput(root, type, len, onChange) {
+function bindAnswerInput(root, type, len, onChange, { options = [] } = {}) {
   let value = type === 'direction' ? [] : '';
+  const textEl = root.querySelector('[data-text]');
+  const current = () => (type === 'direction' ? value.join('') : type === 'text' ? textEl.value : value);
   const render = () => {
     if (type === 'direction') {
       root.querySelectorAll('[data-slots] .seq-slot').forEach((s, i) => {
@@ -152,13 +168,18 @@ function bindAnswerInput(root, type, len, onChange) {
         s.classList.toggle('next', i === value.length);
         s.innerHTML = d ? `<b>${DIRS[d].hanja}</b>` : s.dataset.n ? `<i>${s.dataset.n}</i>` : '';
       });
-    } else root.querySelector('[data-display]').textContent = value || ' ';
-    onChange?.(type === 'direction' ? value.join('') : value);
+    } else if (type === 'choice') {
+      root.querySelectorAll('[data-c]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.c === value)));
+    } else if (type === 'ox') {
+      root.querySelectorAll('[data-ox]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.ox === value)));
+    } else if (type === 'number') root.querySelector('[data-display]').textContent = value || '\u00a0';
+    onChange?.(current());
   };
   const push = (k) => {
     if (type === 'direction') {
       if (k === 'back') value.pop(); else if (value.length < len) value.push(k);
-    } else if (k === '⌫' || k === 'Backspace') value = value.slice(0, -1);
+    } else if (type === 'choice' || type === 'ox') value = k;
+    else if (k === '⌫' || k === 'Backspace') value = value.slice(0, -1);
     else if (k === 'C') value = '';
     else if (value.length < 14) value += k;
     sfx.play('click');
@@ -167,14 +188,33 @@ function bindAnswerInput(root, type, len, onChange) {
   root.querySelectorAll('[data-dir]').forEach((b) => b.addEventListener('click', () => push(b.dataset.dir)));
   root.querySelector('[data-back]')?.addEventListener('click', () => push('back'));
   root.querySelectorAll('[data-k]').forEach((b) => b.addEventListener('click', () => push(b.dataset.k)));
+  root.querySelectorAll('[data-c]').forEach((b) => b.addEventListener('click', () => push(b.dataset.c)));
+  root.querySelectorAll('[data-ox]').forEach((b) => b.addEventListener('click', () => push(b.dataset.ox)));
+  if (textEl) {
+    textEl.addEventListener('input', render);
+    setTimeout(() => textEl.focus(), 60);
+  }
   render();
   return {
-    get: () => (type === 'direction' ? value.join('') : value),
-    clear: () => { value = type === 'direction' ? [] : ''; render(); },
+    get: current,
+    ready() {
+      const v = current();
+      if (type === 'direction') return v.length === len;
+      if (type === 'text') return !!v.trim();
+      return v !== '';
+    },
+    clear: () => { value = type === 'direction' ? [] : ''; if (textEl) { textEl.select(); } render(); },
     key(e) {
+      if (type === 'text') return false; // 입력칸이 직접 받음
       if (type === 'direction') {
         const m = { ArrowUp: 'N', ArrowRight: 'E', ArrowDown: 'S', ArrowLeft: 'W', Backspace: 'back' }[e.key];
         if (m) { e.preventDefault(); push(m); return true; }
+      } else if (type === 'choice') {
+        const n = Number(e.key);
+        if (n >= 1 && n <= options.length) { e.preventDefault(); push(String(n - 1)); return true; }
+      } else if (type === 'ox') {
+        const k = e.key.toUpperCase();
+        if (k === 'O' || k === 'X') { e.preventDefault(); push(k); return true; }
       } else if (/^[0-9.\-/]$/.test(e.key) || e.key === 'Backspace') { e.preventDefault(); push(e.key); return true; }
       return false;
     },
@@ -183,38 +223,40 @@ function bindAnswerInput(root, type, len, onChange) {
 
 // ---- 교과 문제 퍼즐 ----
 function uiPuzzle({ index, spot, intro, puzzle, solved, fragment, submit }) {
-  const imgHtml = puzzle.image ? `<img class="q-img" src="${esc(puzzle.image)}" alt="문제 그림" referrerpolicy="no-referrer" />` : '';
+  const type = ANSWER_TYPES[puzzle.type] ? puzzle.type : 'number';
+  const imgHtml = puzzle.image ? `<img class="q-img" src="${esc(puzzle.image)}" alt="문제 그림" referrerpolicy="no-referrer" title="누르면 크게 보기" />` : '';
   const len = puzzle.len || 4;
+  const options = puzzle.options || [];
   const body = solved
     ? `<div class="solved-box">✅ 이미 푼 문제예요<br/><small>${esc(fragment)}</small></div>
        <div class="m-actions"><button class="btn btn-gold" data-close type="button">확인</button></div>`
-    : `${answerInput(puzzle.type, len)}
+    : `${answerInput(type, len, { options })}
        <p class="err" data-err></p>
-       <div class="m-actions"><button class="btn btn-ghost" data-close type="button">나중에</button><button class="btn btn-gold" data-ok type="button" disabled>${puzzle.type === 'direction' ? '방향 맞추기' : '자물쇠 열기'}</button></div>`;
+       <div class="m-actions"><button class="btn btn-ghost" data-close type="button">나중에</button><button class="btn btn-gold" data-ok type="button" disabled>${type === 'direction' ? '방향 맞추기' : '자물쇠 열기'}</button></div>`;
   let input = null;
   let busy = false;
-  const p = openModal(`${head('🔐', spot.name, `${index + 1}번 문제 · ${puzzle.type === 'direction' ? '방향 자물쇠' : '숫자 자물쇠'}`)}
+  const p = openModal(`${head('🔐', spot.name, `${index + 1}번 문제 · ${ANSWER_TYPES[type].lock}`)}
     <p class="story-intro">${esc(intro)}</p>
     <div class="problem"><div class="q-text">${esc(puzzle.q)}</div>${imgHtml}</div>
     ${body}`, {
     wide: true,
     onKey: (e) => {
-      if (!input) return;
+      if (!input || e.isComposing || e.keyCode === 229) return; // 한글 조합 중 Enter 는 무시
       if (e.key === 'Enter') { e.preventDefault(); trySubmit(); return; }
       input.key(e);
     },
   });
   bindClose(null);
+  card().querySelector('.q-img')?.addEventListener('click', (e) => e.currentTarget.classList.toggle('big'));
   if (solved) return p;
   const root = card();
   const ok = root.querySelector('[data-ok]');
   const err = root.querySelector('[data-err]');
-  input = bindAnswerInput(root, puzzle.type, len, (v) => {
-    ok.disabled = busy || (puzzle.type === 'direction' ? v.length !== len : !v);
-  });
+  input = bindAnswerInput(root, type, len, () => { ok.disabled = busy || !input?.ready(); }, { options });
+  ok.disabled = !input.ready();
   async function trySubmit() {
+    if (busy || !input.ready()) return;
     const v = input.get();
-    if (busy || !v || (puzzle.type === 'direction' && v.length !== len)) return;
     busy = true; ok.disabled = true; err.textContent = '확인하는 중…';
     let r;
     try { r = await submit(v); } catch (e) { err.textContent = e.message; busy = false; ok.disabled = false; return; }
@@ -224,8 +266,8 @@ function uiPuzzle({ index, spot, intro, puzzle, solved, fragment, submit }) {
     err.textContent = '🔒 틀렸어요. 다시 생각해 보세요. (2초 후 다시 입력)';
     setTimeout(() => {
       busy = false;
-      if (puzzle.type === 'direction') input.clear();
-      ok.disabled = puzzle.type === 'direction' ? input.get().length !== len : !input.get();
+      if (type !== 'number') input.clear();
+      ok.disabled = !input.ready();
       err.textContent = '';
     }, 2000);
   }
@@ -664,7 +706,7 @@ async function main() {
   // 교사 미리보기: 편집 화면에서 보낸 구성으로 바로 시작 (기록 저장 안 함)
   if (params.has('preview')) {
     let full = null;
-    try { full = JSON.parse(localStorage.getItem('hanok.preview') || 'null'); } catch { /* 무시 */ }
+    try { full = JSON.parse(sessionStorage.getItem('hanok.preview') || localStorage.getItem('hanok.preview') || 'null'); } catch { /* 무시 */ }
     if (!full) { $('loadingText').textContent = '미리보기할 구성이 없어요. 편집 화면에서 "미리 해보기"를 눌러 주세요.'; return; }
     full.code = 'PREVIEW';
     backend = createLocalBackend(full, { persist: false });
