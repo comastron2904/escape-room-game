@@ -13,6 +13,20 @@ function env() {
   return { url, key };
 }
 
+// Supabase 오류를 선생님이 고칠 수 있는 말로 바꿈
+function explainDbError(status, text) {
+  let e = {};
+  try { e = JSON.parse(text); } catch { /* 무시 */ }
+  const msg = `${e.code || ''} ${e.message || text || ''}`;
+  if (status === 401 || status === 403 || /JWT|Invalid API key|permission denied/i.test(msg)) {
+    return '데이터베이스 요청에 실패했어요: Supabase 키가 맞지 않아요. Vercel 환경변수 SUPABASE_SERVICE_ROLE_KEY 에 service_role(또는 secret) 키를 넣고 Redeploy 해 주세요.';
+  }
+  if (/PGRST204|PGRST205|42703|42P01|column|schema cache|does not exist/i.test(msg)) {
+    return `데이터베이스 요청에 실패했어요: 테이블이 최신 상태가 아니에요. Supabase SQL Editor 에서 supabase/schema.sql 을 다시 실행해 주세요. (${(e.message || '').slice(0, 120)})`;
+  }
+  return `데이터베이스 요청에 실패했어요. (${status} ${(e.message || text || '').slice(0, 120)})`;
+}
+
 // PostgREST 호출
 export async function rest(path, { method = 'GET', body, prefer, count = false } = {}) {
   const { url, key } = env();
@@ -23,7 +37,7 @@ export async function rest(path, { method = 'GET', body, prefer, count = false }
   const text = await r.text();
   if (!r.ok) {
     console.error('[supabase]', r.status, text);
-    throw new HttpError(502, '데이터베이스 요청에 실패했어요. 잠시 후 다시 시도해 주세요.');
+    throw new HttpError(502, explainDbError(r.status, text));
   }
   const data = text ? JSON.parse(text) : null;
   if (count) {
