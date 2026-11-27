@@ -1,7 +1,7 @@
 // 학생용 API: 구성 불러오기 · 대기실 입장 · 상태 확인 · 정답 확인 · 힌트 · 탈출 기록 · 순위표
 // 방 상태(configs.status): waiting 대기 → playing 진행 → ended 종료 (교사가 바꿈)
 // 시간은 "교사가 시작을 누른 시각"(늦게 들어온 학생은 들어온 시각)부터 서버가 잽니다.
-import { handler, rest, getOne, enc, HttpError, cleanCode, cleanName, isUuid } from './_lib.js';
+import { handler, rest, getOne, enc, HttpError, cleanCode, cleanName, isUuid, roomStatus } from './_lib.js';
 import { checkAnswer, publicPuzzle, normalizeDirection, cleanCooldown, registerWrong, lockedFor } from '../js/game/answer.js';
 
 const HINT_PENALTY_MS = 60_000;
@@ -25,7 +25,7 @@ async function load(session) {
   if ((s.round || 1) !== (c.round || 1)) throw new HttpError(410, '선생님이 새 판을 열었어요. 처음 화면에서 다시 들어와 주세요.');
   return { s, c };
 }
-const statusOf = (c) => c.status || 'playing';
+const statusOf = roomStatus;
 // 이 학생의 실제 시작 시각 (ms) — 방이 시작되기 전이면 null
 function effectiveStart(s, c) {
   if (statusOf(c) === 'waiting') return null;

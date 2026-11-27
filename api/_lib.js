@@ -7,10 +7,15 @@ export class HttpError extends Error {
 }
 
 function env() {
-  const url = (process.env.SUPABASE_URL || '').trim().replace(/\/+$/, '');
-  const key = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || '').trim();
+  const url = (process.env.SUPABASE_URL || '').trim().replace(/^['"]|['"]$/g, '').replace(/\/(rest|storage)\/v1.*$/, '').replace(/\/+$/, '');
+  // 복사할 때 딸려 온 따옴표·공백·줄바꿈 제거
+  const key = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || '').trim().replace(/^['"]|['"]$/g, '').trim();
   if (!url || !key) throw new HttpError(500, '서버 설정이 끝나지 않았어요. (Vercel 환경변수 SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY 확인)');
   return { url, key };
+}
+
+function authHeaders(key) {
+  return key.startsWith('eyJ') ? { apikey: key, Authorization: `Bearer ${key}` } : { apikey: key };
 }
 
 // Supabase 오류를 선생님이 고칠 수 있는 말로 바꿈
@@ -18,19 +23,23 @@ function explainDbError(status, text) {
   let e = {};
   try { e = JSON.parse(text); } catch { /* 무시 */ }
   const msg = `${e.code || ''} ${e.message || text || ''}`;
-  if (status === 401 || status === 403 || /JWT|Invalid API key|permission denied/i.test(msg)) {
-    return '데이터베이스 요청에 실패했어요: Supabase 키가 맞지 않아요. Vercel 환경변수 SUPABASE_SERVICE_ROLE_KEY 에 service_role(또는 secret) 키를 넣고 Redeploy 해 주세요.';
+  const detail = `[${status}${e.code ? ' ' + e.code : ''}] ${(e.message || e.msg || e.error || text || '').slice(0, 160)}`;
+  if (/42501|permission denied/i.test(msg)) {
+    return `데이터베이스 요청에 실패했어요: 테이블 접근 권한이 없어요. Supabase SQL Editor 에서 supabase/schema.sql 을 다시 실행해 주세요. ${detail}`;
+  }
+  if (status === 401 || status === 403 || /JWT|Invalid API key|apikey|No API key/i.test(msg)) {
+    return `데이터베이스 요청에 실패했어요: Supabase 가 키를 받아 주지 않아요. SUPABASE_URL 과 SUPABASE_SERVICE_ROLE_KEY 가 같은 프로젝트의 것인지, service_role 키인지 확인하고 Redeploy 해 주세요. ${detail}`;
   }
   if (/PGRST204|PGRST205|42703|42P01|column|schema cache|does not exist/i.test(msg)) {
     return `데이터베이스 요청에 실패했어요: 테이블이 최신 상태가 아니에요. Supabase SQL Editor 에서 supabase/schema.sql 을 다시 실행해 주세요. (${(e.message || '').slice(0, 120)})`;
   }
-  return `데이터베이스 요청에 실패했어요. (${status} ${(e.message || text || '').slice(0, 120)})`;
+  return `데이터베이스 요청에 실패했어요. ${detail}`;
 }
 
 // PostgREST 호출
 export async function rest(path, { method = 'GET', body, prefer, count = false } = {}) {
   const { url, key } = env();
-  const headers = { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };
+  const headers = { ...authHeaders(key), 'Content-Type': 'application/json' };
   const pref = [prefer, count ? 'count=exact' : null].filter(Boolean).join(',');
   if (pref) headers.Prefer = pref;
   const r = await fetch(`${url}/rest/v1/${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -48,6 +57,13 @@ export async function rest(path, { method = 'GET', body, prefer, count = false }
 }
 export const enc = encodeURIComponent;
 
+// 방 상태: 교사가 '시작'을 누른 적이 없으면 항상 대기 (예전에 만든 구성 포함)
+export function roomStatus(c) {
+  if (c.status === 'ended') return 'ended';
+  if (c.status === 'playing' && c.room_started_at) return 'playing';
+  return 'waiting';
+}
+
 // 그림 올리기 (Supabase Storage 공개 버킷 'quiz-images')
 export const IMAGE_BUCKET = 'quiz-images';
 export async function uploadImage(path, dataUrl) {
@@ -60,7 +76,7 @@ export async function uploadImage(path, dataUrl) {
   const full = `${path}.${ext}`;
   const r = await fetch(`${url}/storage/v1/object/${IMAGE_BUCKET}/${full}`, {
     method: 'POST',
-    headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': m[1], 'x-upsert': 'true', 'cache-control': 'max-age=31536000' },
+    headers: { ...authHeaders(key), 'Content-Type': m[1], 'x-upsert': 'true', 'cache-control': 'max-age=31536000' },
     body: buf,
   });
   if (!r.ok) {

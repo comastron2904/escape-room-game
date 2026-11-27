@@ -1,7 +1,7 @@
 // 교사용 API: 구성 만들기 · 불러오기 · 고치기 · 순위표 관리
 // 구성 코드 + 편집 비밀번호로 본인 확인 (계정 없이)
 import { randomInt, randomBytes } from 'node:crypto';
-import { handler, rest, getOne, enc, HttpError, cleanCode, hashPassword, verifyPassword, newCode, isUuid, uploadImage } from './_lib.js';
+import { handler, rest, getOne, enc, HttpError, cleanCode, hashPassword, verifyPassword, newCode, isUuid, uploadImage, roomStatus } from './_lib.js';
 import { validatePuzzles, cleanPuzzle, cleanCooldown } from '../js/game/answer.js';
 
 const STORIES = ['seolhwa', 'hong', 'kimsatgat'];
@@ -100,7 +100,7 @@ export default handler({
   },
   async roomStart({ code, password }) {
     const c = await auth(code, password);
-    if ((c.status || 'playing') === 'playing') return roomInfo(c);
+    if (roomStatus(c) === 'playing') return roomInfo(c);
     // 모두 같은 순간에 출발하도록 5초 뒤를 시작 시각으로 잡음 (학생 화면은 그때까지 카운트다운)
     const startAt = c.status === 'ended' && c.room_started_at ? c.room_started_at : new Date(Date.now() + START_DELAY_MS).toISOString();
     const rows = await rest(`configs?code=eq.${enc(c.code)}`, { method: 'PATCH', body: { status: 'playing', room_started_at: startAt, room_ended_at: null }, prefer: 'return=representation' });
@@ -124,7 +124,7 @@ async function roomInfo(c) {
   const now = Date.now();
   const online = rows.filter((r) => r.last_seen && now - Date.parse(r.last_seen) < 25_000);
   return {
-    status: c.status || 'playing', round: c.round || 1,
+    status: roomStatus(c), round: c.round || 1,
     startedAt: c.room_started_at ? Date.parse(c.room_started_at) : null,
     endedAt: c.room_ended_at ? Date.parse(c.room_ended_at) : null,
     now,

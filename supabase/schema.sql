@@ -34,8 +34,8 @@ create table if not exists public.sessions (
 -- 예전에 만든 테이블에 새 칸 추가 (이미 있으면 건너뜀)
 alter table public.configs add column if not exists cooldown jsonb not null default '{"first":3,"step":3,"max":30}';
 alter table public.sessions add column if not exists penalties jsonb not null default '{}';
--- 대기실 (교사가 시작·종료). 예전에 만든 구성은 바로 진행 중으로 둠
-alter table public.configs add column if not exists status text not null default 'playing';
+-- 대기실 (교사가 시작·종료). 교사가 '시작'을 누르기 전에는 항상 대기
+alter table public.configs add column if not exists status text not null default 'waiting';
 alter table public.configs add column if not exists round int not null default 1;
 alter table public.configs add column if not exists room_started_at timestamptz;
 alter table public.configs add column if not exists room_ended_at timestamptz;
