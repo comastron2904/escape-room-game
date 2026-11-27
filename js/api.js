@@ -29,6 +29,7 @@ export function createRemoteBackend(url = '/api/game') {
     config: (code) => call('config', { code }),
     start: (code, nickname) => call('start', { code, nickname }),
     resume: (session) => call('resume', { session }),
+    status: (session) => call('status', { session }),
     check: (session, puzzle, answer) => call('check', { session, puzzle, answer }),
     hint: (session, key) => call('hint', { session, key }),
     final: (session, seq) => call('final', { session, seq }),
@@ -65,13 +66,18 @@ export function createLocalBackend(fullConfig, { persist = true } = {}) {
     async start(code, nickname) {
       const s = { id: `local-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, nickname, startedAt: Date.now(), solved: [], hintKeys: [], finishedAt: null };
       put(s);
-      return { session: s.id, startedAt: s.startedAt, now: Date.now() };
+      return { session: s.id, status: 'playing', startedAt: s.startedAt, now: Date.now() };
+    },
+    // 체험판·미리보기는 교사 없이 바로 진행
+    async status(id) {
+      const s = sess(id);
+      return { status: 'playing', startedAt: s.startedAt, now: Date.now(), finished: !!s.finishedAt, online: 1, finished_count: 0 };
     },
     async resume(id) {
       const s = sess(id);
       const pen = s.penalties || {};
       const locks = Object.fromEntries(Object.keys(pen).map((k) => [k, lockedFor(pen, k)]).filter(([, v]) => v > 0));
-      return { code: fullConfig.code, nickname: s.nickname, startedAt: s.startedAt, now: Date.now(), solved: s.solved, hints: s.hintKeys.length, hintKeys: s.hintKeys, finished: !!s.finishedAt, result: s.result || null, fragments: fragments(s), locks };
+      return { code: fullConfig.code, nickname: s.nickname, status: 'playing', startedAt: s.startedAt, now: Date.now(), solved: s.solved, hints: s.hintKeys.length, hintKeys: s.hintKeys, finished: !!s.finishedAt, result: s.result || null, fragments: fragments(s), locks };
     },
     async check(id, i, answer) {
       const s = sess(id);

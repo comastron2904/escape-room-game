@@ -17,6 +17,7 @@
     </div>
     <div class="ed-top-actions">
       <span id="codeBadge" class="code-badge" hidden></span>
+      <button id="goRoom" class="btn btn-gold btn-sm" type="button" hidden>🎮 수업 진행</button>
       <a class="btn btn-ghost btn-sm" href="./" target="_blank" rel="noopener">학생 화면 열기 ↗</a>
     </div>
   </header>
@@ -98,8 +99,28 @@
         </div>
       </section>
 
+      <section class="ed-sec paper" id="roomSec" hidden>
+        <h2><span class="num">5</span> 수업 진행 (대기실)</h2>
+        <p class="muted">학생은 코드를 넣고 들어오면 <b>대기</b> 상태로 기다려요. <b>시작</b>을 누르면 5초 카운트다운 후 모두 같은 순간에 출발하고, 시간도 그때부터 재요.</p>
+        <div class="room-panel">
+          <div class="room-status"><span id="roomBadge" class="room-badge">불러오는 중</span><span id="roomClock" class="room-clock"></span></div>
+          <div class="room-counts">
+            <div><b id="cntOnline">0</b><span id="cntOnlineLabel">명 대기 중</span></div>
+            <div><b id="cntPlaying">0</b><span>명 진행 중</span></div>
+            <div><b id="cntFinished">0</b><span>명 탈출</span></div>
+          </div>
+          <div class="room-actions">
+            <button id="roomStart" class="btn btn-gold big-btn" type="button">▶ 시작</button>
+            <button id="roomEnd" class="btn btn-red big-btn" type="button">■ 종료</button>
+            <button id="roomReset" class="btn btn-ghost" type="button">↺ 새 판 열기 (다시 대기)</button>
+          </div>
+          <p class="muted tiny">'새 판 열기'를 누르면 다시 대기 상태가 되고, 학생들은 처음 화면에서 다시 들어와야 해요. 이전 판 기록은 순위표에서 빠져요(삭제되지는 않음).</p>
+          <p class="err" id="roomErr"></p>
+        </div>
+      </section>
+
       <section class="ed-sec paper" id="boardSec" hidden>
-        <h2><span class="num">5</span> 순위표 관리</h2>
+        <h2><span class="num">6</span> 순위표 관리</h2>
         <div class="ed-actions left">
           <button id="refreshBoard" class="btn btn-ghost btn-sm" type="button">🔄 새로고침</button>
           <button id="resetBoard" class="btn btn-red btn-sm" type="button">전체 기록 지우기</button>

@@ -34,6 +34,13 @@ create table if not exists public.sessions (
 -- 예전에 만든 테이블에 새 칸 추가 (이미 있으면 건너뜀)
 alter table public.configs add column if not exists cooldown jsonb not null default '{"first":3,"step":3,"max":30}';
 alter table public.sessions add column if not exists penalties jsonb not null default '{}';
+-- 대기실 (교사가 시작·종료). 예전에 만든 구성은 바로 진행 중으로 둠
+alter table public.configs add column if not exists status text not null default 'playing';
+alter table public.configs add column if not exists round int not null default 1;
+alter table public.configs add column if not exists room_started_at timestamptz;
+alter table public.configs add column if not exists room_ended_at timestamptz;
+alter table public.sessions add column if not exists round int not null default 1;
+alter table public.sessions add column if not exists last_seen timestamptz default now();
 
 create index if not exists sessions_board_idx on public.sessions (code, score_ms) where finished_at is not null;
 create index if not exists sessions_code_idx on public.sessions (code);
@@ -44,8 +51,14 @@ alter table public.configs enable row level security;
 alter table public.sessions enable row level security;
 revoke all on public.configs from anon, authenticated;
 revoke all on public.sessions from anon, authenticated;
+-- 서버(service_role)에는 권한을 분명히 줌 (새 프로젝트는 기본 권한이 없을 수 있음)
+grant usage on schema public to service_role;
+grant all on public.configs, public.sessions to service_role;
 
 -- 문제 그림 저장소 (공개 읽기 버킷). 그림 올리기는 서버(service_role)만 할 수 있습니다.
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('quiz-images', 'quiz-images', true, 1048576, array['image/jpeg', 'image/png', 'image/webp'])
 on conflict (id) do update set public = true;
+
+-- 서버가 새 칸을 바로 알아보게 새로고침
+notify pgrst, 'reload schema';

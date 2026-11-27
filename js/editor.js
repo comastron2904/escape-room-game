@@ -255,10 +255,12 @@ function openEditor() {
   $('codeBadge').hidden = !loaded;
   if (loaded) $('codeBadge').textContent = loaded.code;
   $('boardSec').hidden = !loaded;
+  $('roomSec').hidden = !loaded;
+  $('goRoom').hidden = !loaded;
   renderStories();
   renderPuzzles();
   renderCooldown();
-  if (loaded) { showResult(loaded.code); loadBoard(); }
+  if (loaded) { showResult(loaded.code); loadBoard(); startRoomWatch(); }
   window.scrollTo(0, 0);
 }
 
@@ -292,6 +294,7 @@ $('loadForm').addEventListener('submit', async (e) => {
     loaded = { code: c.code, password };
     openEditor();
     toast(`${c.code} 구성을 불러왔어요.`);
+    setTimeout(() => $('roomSec').scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
   } catch (err) { $('loadErr').textContent = err.message; }
 });
 
@@ -343,8 +346,11 @@ $('editor').addEventListener('submit', async (e) => {
       $('pwNew').hidden = true; $('pwLoaded').hidden = false;
       $('codeBadge').hidden = false; $('codeBadge').textContent = r.code;
       $('boardSec').hidden = false;
+      $('roomSec').hidden = false;
+      $('goRoom').hidden = false;
       toast(`구성 코드 ${r.code} 가 만들어졌어요!`);
       loadBoard();
+      startRoomWatch();
     }
     saveDraft();
     showResult(loaded.code);
@@ -388,6 +394,62 @@ $('resetBoard').addEventListener('click', async () => {
   if (!confirm('이 구성의 모든 기록(진행 중 포함)을 지울까요? 되돌릴 수 없어요.')) return;
   try { await api('resetScores', loaded); toast('기록을 모두 지웠어요.'); loadBoard(); } catch (err) { toast(err.message); }
 });
+
+// ---------------- 수업 진행 (대기실) ----------------
+let room = null, roomTimer = 0, clockTimer = 0;
+function renderRoom() {
+  if (!room) return;
+  const st = room.status;
+  const badge = $('roomBadge');
+  badge.textContent = st === 'waiting' ? '⏳ 대기 중' : st === 'playing' ? '▶ 진행 중' : '■ 종료됨';
+  badge.dataset.st = st;
+  $('cntOnline').textContent = st === 'waiting' ? room.counts.online : room.counts.online;
+  $('cntOnlineLabel').textContent = st === 'waiting' ? '명 대기 중' : '명 접속 중';
+  $('cntPlaying').textContent = st === 'waiting' ? 0 : room.counts.playing;
+  $('cntFinished').textContent = room.counts.finished;
+  $('roomStart').disabled = st === 'playing';
+  $('roomStart').textContent = st === 'ended' ? '▶ 다시 진행' : '▶ 시작';
+  $('roomEnd').disabled = st !== 'playing';
+  updateClock();
+}
+function updateClock() {
+  if (!room) return;
+  const off = room.now - (room._fetched || Date.now());
+  const t = room.status === 'playing' && room.startedAt ? Date.now() + off - room.startedAt
+    : room.status === 'ended' && room.startedAt && room.endedAt ? room.endedAt - room.startedAt : null;
+  $('roomClock').textContent = t == null ? '' : t < 0 ? `🚦 ${Math.ceil(-t / 1000)}초 뒤 출발` : `⏱ ${formatTime(t)}`;
+}
+async function refreshRoom() {
+  if (!loaded) return;
+  try {
+    room = await api('room', loaded);
+    room._fetched = Date.now();
+    $('roomErr').textContent = '';
+    renderRoom();
+  } catch (e) { $('roomErr').textContent = e.message; }
+}
+function startRoomWatch() {
+  clearInterval(roomTimer); clearInterval(clockTimer);
+  refreshRoom();
+  roomTimer = setInterval(() => { if (!document.hidden) refreshRoom(); }, 3000);
+  clockTimer = setInterval(updateClock, 1000);
+}
+async function roomAction(action, confirmText) {
+  if (confirmText && !confirm(confirmText)) return;
+  try {
+    room = await api(action, loaded);
+    room._fetched = Date.now();
+    renderRoom();
+    if (action === 'roomStart') toast('시작! 학생 화면에서 5초 카운트다운 후 모두 함께 출발해요.');
+    if (action === 'roomEnd') toast('게임을 종료했어요.');
+    if (action === 'roomReset') { toast('새 판을 열었어요. 학생들이 다시 들어오면 대기 상태가 돼요.'); loadBoard(); }
+  } catch (e) { $('roomErr').textContent = e.message; }
+}
+$('roomStart').addEventListener('click', () => roomAction('roomStart', room?.status === 'ended' ? '종료한 판을 다시 진행할까요?' : null));
+$('roomEnd').addEventListener('click', () => roomAction('roomEnd', '게임을 종료할까요? 아직 탈출하지 못한 학생은 더 이상 문제를 풀 수 없어요.'));
+$('roomReset').addEventListener('click', () => roomAction('roomReset', '새 판을 열까요? 지금 판은 끝나고, 학생들은 처음 화면에서 다시 들어와야 해요.'));
+
+$('goRoom').addEventListener('click', () => $('roomSec').scrollIntoView({ behavior: 'smooth', block: 'start' }));
 
 // 작성 중 초안 안내
 try {

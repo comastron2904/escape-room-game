@@ -90,6 +90,24 @@
     </div>
   </div>
 
+  <!-- 대기실 -->
+  <div id="lobby" class="lobby-screen" hidden>
+    <div class="lobby-card paper">
+      <p class="event-kicker">대기실</p>
+      <h1 id="lobbyTitle" class="start-title">한옥마을 방탈출</h1>
+      <p class="muted" id="lobbyStory"></p>
+      <div class="lobby-wait">
+        <div class="reel"></div>
+        <p>선생님이 <b>시작</b>을 누르면 모두 함께 출발해요</p>
+      </div>
+      <div class="lobby-count"><b id="lobbyCount">0</b><span>명 대기 중</span></div>
+      <p class="muted tiny">내 이름: <b id="lobbyName"></b></p>
+      <div class="lobby-text" id="lobbyText"></div>
+      <p class="err" id="lobbyErr"></p>
+    </div>
+    <div id="lobbyCountdown" class="lobby-countdown" hidden>3</div>
+  </div>
+
   <div class="preview-banner">👀 미리보기 모드 — 기록이 저장되지 않아요</div>
 
   <div id="toasts" class="toasts" aria-live="polite"></div>

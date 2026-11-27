@@ -20,7 +20,8 @@ export function freshState(extra = {}) {
     locks: {},          // 오답 대기 끝 시각 { p3: ms, final: ms }
     area: 'village',
     pos: null,
-    startedAt: 0,       // 서버 기준 시작 시각(ms)
+    startedAt: 0,       // 서버 기준 시작 시각(ms) · 대기 중이면 null
+    roomStatus: 'playing', // waiting | playing | ended (교사가 정함)
     clockOffset: 0,     // 서버시각 - 내 시각
     finished: false,
     result: null,       // { elapsedMs, hints, scoreMs, rank }

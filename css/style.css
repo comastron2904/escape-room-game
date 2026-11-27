@@ -445,3 +445,23 @@ body.preview-mode .preview-banner { display: block; position: fixed; top: 0; lef
 /* 오답 대기 중 */
 .locked { opacity: .45; pointer-events: none; filter: grayscale(.4); }
 .lock-sec { display: inline-block; min-width: 42px; padding: 1px 8px; border-radius: 8px; background: var(--red); color: #fff; font-variant-numeric: tabular-nums; }
+/* 대기실 */
+.lobby-screen {
+  position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 16px; overflow: auto;
+  background: radial-gradient(ellipse at 50% 0%, rgba(231,237,244,.92) 0%, rgba(169,182,198,.92) 55%, rgba(93,107,125,.95) 100%);
+}
+.lobby-card { width: min(480px, 100%); border-radius: 22px; padding: 24px 22px 18px; text-align: center; }
+.lobby-wait { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 14px 0 6px; font-weight: 600; }
+.lobby-wait .reel { width: 28px; height: 28px; border-width: 3px; }
+.lobby-wait p { margin: 0; }
+.lobby-count { display: flex; align-items: baseline; justify-content: center; gap: 6px; margin: 8px 0 4px; }
+.lobby-count b { font-size: 54px; font-weight: 900; color: var(--red); font-variant-numeric: tabular-nums; line-height: 1; }
+.lobby-count span { font-size: 18px; font-weight: 700; color: var(--ink-2); }
+.lobby-text { text-align: left; white-space: pre-wrap; font-family: var(--serif); font-size: 14px; line-height: 1.7; color: #33251a; background: rgba(255,255,255,.5); border-radius: 12px; padding: 12px 14px; margin-top: 12px; max-height: 38vh; overflow: auto; }
+.lobby-countdown {
+  position: fixed; inset: 0; display: grid; place-items: center; z-index: 31; pointer-events: none;
+  font-size: min(32vw, 220px); font-weight: 900; color: #fff; font-family: var(--serif);
+  text-shadow: 0 8px 30px rgba(0,0,0,.45), 0 0 0 #000; background: rgba(20,14,10,.35);
+}
+.lobby-countdown.pop { animation: cdpop .8s ease-out; }
+@keyframes cdpop { 0% { transform: scale(1.6); opacity: 0; } 30% { transform: scale(1); opacity: 1; } 100% { transform: scale(.9); opacity: .9; } }

@@ -655,7 +655,7 @@ function showStart() {
           const be = await backendFor(code);
           const cfg = await be.config(code);
           const r = await be.start(code, nickname);
-          const st = freshState({ code: cfg.code, session: r.session, mode: be.mode, nickname, startedAt: r.startedAt, clockOffset: r.now - Date.now() });
+          const st = freshState({ code: cfg.code, session: r.session, mode: be.mode, nickname, startedAt: r.startedAt, clockOffset: r.now - Date.now(), roomStatus: r.status || 'playing' });
           profile = { nickname, roll };
           saveProfile(profile);
           resolve({ be, cfg, st, roll });
@@ -682,6 +682,7 @@ function mergeResume(sv, r) {
   st.hintKeys = r.hintKeys || st.hintKeys;
   st.hintsUsed = r.hints ?? st.hintKeys.length;
   st.startedAt = r.startedAt;
+  st.roomStatus = r.status || 'playing';
   st.clockOffset = r.now - Date.now();
   st.finished = !!r.finished;
   st.locks = Object.fromEntries(Object.entries(r.locks || {}).map(([k, ms]) => [k, Date.now() + ms]));
@@ -713,6 +714,8 @@ let busyInteract = false;
 async function onActivate(id) {
   if (busyInteract || !$('modal').hidden) return;
   if (performance.now() - lastModalClose < 250) return;
+  if (state.roomStatus === 'ended' && !state.finished && !id.startsWith('exit_') && !id.startsWith('door_')) { showRoomEnded(); return; }
+  if (state.roomStatus === 'waiting') return;
   busyInteract = true;
   try { await game.interact(id); } catch (e) {
     console.error('[hanok] 상호작용 오류', e);
@@ -721,6 +724,114 @@ async function onActivate(id) {
     busyInteract = false;
     if (currentNear) showNear(currentNear);
   }
+}
+
+// =========================================================
+// 대기실 · 종료 (선생님이 편집 화면에서 시작/종료)
+// =========================================================
+function waitInLobby() {
+  return new Promise((resolve) => {
+    const el = $('lobby');
+    $('lobbyTitle').textContent = config.title || story.title;
+    $('lobbyStory').textContent = `${story.name}의 전설`;
+    $('lobbyName').textContent = state.nickname;
+    $('lobbyText').textContent = `${story.synopsis}\n\n마을 곳곳 일곱 곳에 문제가 숨겨져 있어요. 문제를 풀어 자물쇠를 열 때마다 조각을 하나씩 얻고, 일곱 조각을 모아 중앙 마당의 석단 퍼즐을 풀면 보물로 가는 길이 열립니다.\n\n• 이동: ${document.body.classList.contains('touch') ? '화면을 눌러 이동' : 'WASD / 방향키, 클릭'}\n• 조사: 핀이 있는 곳에서 ${document.body.classList.contains('touch') ? '버튼 누르기' : 'E 또는 Space'}\n• 💡 힌트는 1개당 +1분, 오답을 내면 잠시 기다려야 해요.`;
+    el.hidden = false;
+    world?.setPaused(true);
+    $('timer').textContent = '대기 중';
+    let done = false;
+    const poll = async () => {
+      if (done) return;
+      try {
+        const r = await backend.status(state.session);
+        $('lobbyCount').textContent = r.online ?? 0;
+        $('lobbyErr').textContent = '';
+        if (r.status === 'playing' && r.startedAt) {
+          done = true;
+          clearInterval(t);
+          state.roomStatus = 'playing';
+          state.startedAt = r.startedAt;
+          state.clockOffset = r.now - Date.now();
+          save();
+          await countdown(state.startedAt);
+          el.hidden = true;
+          world?.setPaused(false);
+          addClueSilently('intro');
+          resolve();
+        } else if (r.status === 'ended') {
+          done = true;
+          clearInterval(t);
+          state.roomStatus = 'ended';
+          el.hidden = true;
+          resolve();
+        }
+      } catch (e) {
+        $('lobbyErr').textContent = e.message;
+        if (e.status === 410) { done = true; clearInterval(t); showNewRound(); }
+      }
+    };
+    const t = setInterval(poll, 1500);
+    poll();
+  });
+}
+function addClueSilently(id) { if (!state.clues.includes(id)) { state.clues.push(id); save(); } }
+// 서버가 정한 출발 시각까지 남은 초를 세어 모두 같은 순간에 출발
+async function countdown(startAt) {
+  const c = $('lobbyCountdown');
+  c.hidden = false;
+  let shown = null;
+  for (;;) {
+    const left = Math.ceil((startAt - now()) / 1000);
+    if (left <= 0) break;
+    if (left !== shown) {
+      shown = left;
+      c.textContent = String(left);
+      c.classList.remove('pop'); void c.offsetWidth; c.classList.add('pop');
+      sfx.play('tap');
+    }
+    await wait(80);
+  }
+  c.textContent = '출발!';
+  c.classList.remove('pop'); void c.offsetWidth; c.classList.add('pop');
+  sfx.play('get');
+  await wait(650);
+  c.hidden = true;
+}
+function watchRoom() {
+  if (backend.mode !== 'remote') return;
+  setInterval(async () => {
+    if (document.hidden || state.roomStatus === 'ended' || !$('lobby').hidden) return;
+    try {
+      const r = await backend.status(state.session);
+      if (r.status === 'ended' && state.roomStatus !== 'ended') {
+        state.roomStatus = 'ended';
+        save();
+        if (!state.finished) showRoomEnded();
+        else toast('🔔 선생님이 게임을 종료했어요.');
+      }
+    } catch (e) { if (e.status === 410) showNewRound(); }
+  }, 10_000);
+}
+function showRoomEnded() {
+  const p = openModal(`<div class="ending">
+      <div class="trophy">🔔</div>
+      <p class="get-kicker">게임 종료</p>
+      <h2>선생님이 게임을 종료했어요</h2>
+      <p class="m-desc">이번 판은 여기까지예요. 모은 조각: <b>${state.solved.length} / ${config.puzzles.length}</b></p>
+      <div class="m-actions" style="justify-content:center;flex-wrap:wrap">
+        <button class="btn btn-ghost" data-close type="button">마을 둘러보기</button>
+        <button class="btn btn-gold" data-board type="button">🏆 순위표 보기</button>
+      </div></div>`);
+  bindClose(null);
+  card().querySelector('[data-board]').addEventListener('click', () => openLeaderboard());
+  return p;
+}
+function showNewRound() {
+  $('lobby').hidden = true;
+  openModal(`${head('🔄', '새 판이 열렸어요', '', false)}
+    <p class="m-desc">선생님이 새 판을 열었어요. 처음 화면에서 이름을 넣고 다시 들어와 주세요.</p>
+    <div class="m-actions"><button class="btn btn-gold" data-ok type="button">처음 화면으로</button></div>`, { locked: true });
+  card().querySelector('[data-ok]').addEventListener('click', () => { clearSave(); location.href = `${location.pathname}?code=${encodeURIComponent(state.code)}`; });
 }
 
 async function main() {
@@ -788,9 +899,14 @@ async function main() {
 
   if (sfx.musicOn) sfx.startMusic();
   window.addEventListener('pointerdown', () => { if (sfx.musicOn) sfx.startMusic(); }, { once: true });
-  if (!state.clues.length && !state.solved.length) await showIntro();
+  // 대기실: 선생님이 시작할 때까지 기다림 (그동안 3D 마을은 미리 준비돼 있음)
+  let waited = false;
+  if (state.roomStatus === 'waiting') { waited = true; await waitInLobby(); }
+  if (state.roomStatus === 'ended' && !state.finished) showRoomEnded();
+  else if (!state.clues.length && !state.solved.length && !waited) await showIntro();
   else if (state.finished) toast('이미 탈출에 성공한 기록이에요. 순위표는 메뉴에서 볼 수 있어요.');
-  else toast(`이어서 진행해요 · 조각 ${state.solved.length}/${config.puzzles.length}`);
+  else if (!waited) toast(`이어서 진행해요 · 조각 ${state.solved.length}/${config.puzzles.length}`);
+  watchRoom();
 
   $('actBtn').addEventListener('click', () => world.activateNear());
   $('notebookBtn').addEventListener('click', () => openNotebook());
@@ -811,6 +927,8 @@ async function main() {
   });
 
   const tickTimer = () => {
+    if (!state.finished && (state.roomStatus === 'waiting' || !state.startedAt)) { $('timer').textContent = '대기 중'; $('hintCount').textContent = state.hintsUsed; return; }
+    if (!state.finished && state.roomStatus === 'ended') { $('timer').textContent = '종료'; return; }
     const ms = state.finished && state.result ? state.result.elapsedMs : now() - state.startedAt;
     $('timer').textContent = formatTime(ms);
     $('hintCount').textContent = state.hintsUsed;

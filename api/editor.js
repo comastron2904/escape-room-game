@@ -6,6 +6,7 @@ import { validatePuzzles, cleanPuzzle, cleanCooldown } from '../js/game/answer.j
 
 const STORIES = ['seolhwa', 'hong', 'kimsatgat'];
 const COUNT = 7;
+const START_DELAY_MS = Number(process.env.ROOM_START_DELAY_MS ?? 5000); // 출발 전 카운트다운 (기본 5초)
 
 function cleanConfig({ title, story, puzzles, cooldown }) {
   const t = String(title || '').trim().slice(0, 40);
@@ -48,7 +49,7 @@ export default handler({
       const exists = await getOne('configs', `code=eq.${code}`, 'code');
       if (exists) continue;
       await storeImages(code, cfg.puzzles);
-      await rest('configs', { method: 'POST', body: { code, ...cfg, final_seq: finalSeq(), edit_hash: hashPassword(pw) } });
+      await rest('configs', { method: 'POST', body: { code, ...cfg, final_seq: finalSeq(), edit_hash: hashPassword(pw), status: 'waiting', round: 1 } });
       return { code };
     }
     throw new HttpError(500, '코드를 만들지 못했어요. 다시 시도해 주세요.');
@@ -68,12 +69,13 @@ export default handler({
 
   async scores({ code, password }) {
     const c = await auth(code, password);
-    const rows = await rest(`sessions?code=eq.${enc(c.code)}&select=id,nickname,started_at,finished_at,elapsed_ms,hints,score_ms,solved,hint_keys,wrong&order=score_ms.asc.nullslast,started_at.desc&limit=500`);
+    const rows = await rest(`sessions?code=eq.${enc(c.code)}&round=eq.${c.round || 1}&select=id,nickname,started_at,finished_at,elapsed_ms,hints,score_ms,solved,hint_keys,wrong,last_seen&order=score_ms.asc.nullslast,started_at.desc&limit=500`);
     return {
       entries: rows.map((s) => ({
         id: s.id, nickname: s.nickname, startedAt: s.started_at, finishedAt: s.finished_at,
         elapsedMs: s.elapsed_ms == null ? null : Number(s.elapsed_ms), hints: s.finished_at ? s.hints : (s.hint_keys || []).length,
         scoreMs: s.score_ms == null ? null : Number(s.score_ms), solved: (s.solved || []).length, wrong: s.wrong || 0,
+        online: !!s.last_seen && Date.now() - Date.parse(s.last_seen) < 25_000,
       })),
     };
   },
@@ -90,4 +92,47 @@ export default handler({
     await rest(`sessions?code=eq.${enc(c.code)}`, { method: 'DELETE' });
     return { ok: true };
   },
+
+  // ---------------- 수업 진행 (대기실) ----------------
+  async room({ code, password }) {
+    const c = await auth(code, password);
+    return roomInfo(c);
+  },
+  async roomStart({ code, password }) {
+    const c = await auth(code, password);
+    if ((c.status || 'playing') === 'playing') return roomInfo(c);
+    // 모두 같은 순간에 출발하도록 5초 뒤를 시작 시각으로 잡음 (학생 화면은 그때까지 카운트다운)
+    const startAt = c.status === 'ended' && c.room_started_at ? c.room_started_at : new Date(Date.now() + START_DELAY_MS).toISOString();
+    const rows = await rest(`configs?code=eq.${enc(c.code)}`, { method: 'PATCH', body: { status: 'playing', room_started_at: startAt, room_ended_at: null }, prefer: 'return=representation' });
+    return roomInfo(rows[0]);
+  },
+  async roomEnd({ code, password }) {
+    const c = await auth(code, password);
+    const rows = await rest(`configs?code=eq.${enc(c.code)}`, { method: 'PATCH', body: { status: 'ended', room_ended_at: new Date().toISOString() }, prefer: 'return=representation' });
+    return roomInfo(rows[0]);
+  },
+  // 새 판: 다시 대기 상태로 (이전 판 학생은 처음부터 다시 들어와야 함)
+  async roomReset({ code, password }) {
+    const c = await auth(code, password);
+    const rows = await rest(`configs?code=eq.${enc(c.code)}`, { method: 'PATCH', body: { status: 'waiting', round: (c.round || 1) + 1, room_started_at: null, room_ended_at: null }, prefer: 'return=representation' });
+    return roomInfo(rows[0]);
+  },
 });
+
+async function roomInfo(c) {
+  const rows = await rest(`sessions?code=eq.${enc(c.code)}&round=eq.${c.round || 1}&select=finished_at,last_seen,solved&limit=1000`);
+  const now = Date.now();
+  const online = rows.filter((r) => r.last_seen && now - Date.parse(r.last_seen) < 25_000);
+  return {
+    status: c.status || 'playing', round: c.round || 1,
+    startedAt: c.room_started_at ? Date.parse(c.room_started_at) : null,
+    endedAt: c.room_ended_at ? Date.parse(c.room_ended_at) : null,
+    now,
+    counts: {
+      total: rows.length,
+      online: online.length,
+      playing: online.filter((r) => !r.finished_at).length,
+      finished: rows.filter((r) => r.finished_at).length,
+    },
+  };
+}
